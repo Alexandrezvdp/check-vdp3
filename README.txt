@@ -1,0 +1,1 @@
+Déposer tous les fichiers à la racine du dépôt GitHub Pages. Puis Settings > Pages > Deploy from branch > main > /(root). Ouvrir ensuite l'adresse HTTPS dans Safari et Partager > Ajouter à l'écran d'accueil.

@@ -140,7 +140,7 @@ function renderDayPanel(){
  const ts=tasks.filter(t=>t.task_date===selectedDate);
  const canAdmin=profile?.role==="admin";
  document.getElementById("dayPanel").innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0;text-transform:capitalize">${fmt(selectedDate)}</h2><div class="small">${ts.length} tâche(s)</div></div>${canAdmin?'<button onclick="addTask()">＋ Ajouter une tâche</button>':""}</div>`+
- (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px">${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}${canAdmin?`<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button>`:""}</div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
+ (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px">${t.status!=="done"?`<button type="button" onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}${canAdmin?`<button type="button" class="danger" onclick="deleteTask('${t.id}')">Supprimer</button>`:""}</div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
 }
 function selectDay(ds){selectedDate=ds;renderCalendar()}
 function moveMonth(n){calDate.setMonth(calDate.getMonth()+n);renderCalendar()}
@@ -222,6 +222,56 @@ async function saveTask(){
     if(btn)btn.disabled=false;
   }
 }
+
+async function completeTask(id){
+  const task=tasks.find(t=>String(t.id)===String(id));
+  if(!task)return;
+
+  const {error}=await client.from("tasks").update({status:"done"}).eq("id",id);
+  if(error){
+    alert("Impossible de marquer la tâche comme réalisée : "+error.message);
+    console.error("COMPLETE TASK ERROR",error);
+    return;
+  }
+
+  await refresh();
+  renderCalendar();
+
+  const subject=`CHECK VDP — Tâche réalisée — ${task.boat_name} — ${task.task_date}`;
+  const body=`Bonjour,
+
+La tâche suivante a été marquée comme réalisée :
+
+Date : ${task.task_date}
+Bateau : ${task.boat_name}
+Opérateur : ${task.operator_name}
+Tâche : ${task.task}
+
+Cordialement,
+CHECK VDP`;
+
+  window.location.href=`mailto:a.zinzius@vedettesdeparis.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+async function deleteTask(id){
+  if(profile?.role!=="admin"){
+    alert("Seul un administrateur peut supprimer une tâche.");
+    return;
+  }
+
+  if(!confirm("Supprimer cette tâche ?"))return;
+
+  const {error}=await client.from("tasks").delete().eq("id",id);
+  if(error){
+    alert("Impossible de supprimer la tâche : "+error.message);
+    console.error("DELETE TASK ERROR",error);
+    return;
+  }
+
+  await refresh();
+  renderCalendar();
+}
+
 function openChecklist(id){currentBoat=boats.find(b=>b.id===id);currentItems=items.filter(i=>i.boat_id===id);answers={};photos={};renderChecklist();showPage("checklist")}
 function renderChecklist(){
  const b=currentBoat; document.getElementById("page-checklist").innerHTML=`<div class="card"><div class="row"><button class="secondary" onclick="showPage('home')">← Retour</button><div class="grow"><h2 style="margin:0">🔧 Technique — ${esc(b.name)}</h2></div></div><label>Nom du technicien</label><input id="techName" placeholder="Nom et prénom"><label>Date</label><input id="techDate" type="date" value="${isoDate(new Date())}"></div>`+

@@ -140,7 +140,7 @@ function renderDayPanel(){
  const ts=tasks.filter(t=>t.task_date===selectedDate);
  const canAdmin=profile?.role==="admin";
  document.getElementById("dayPanel").innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0;text-transform:capitalize">${fmt(selectedDate)}</h2><div class="small">${ts.length} tâche(s)</div></div>${canAdmin?'<button onclick="addTask()">＋ Ajouter une tâche</button>':""}</div>`+
- (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px">${t.status!=="done"?`<button type="button" onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}${canAdmin?`<button type="button" class="danger" onclick="deleteTask('${t.id}')">Supprimer</button>`:""}</div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
+ (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div>${t.photo_url?`<div style="margin-top:10px"><img src="${esc(t.photo_url)}" alt="Photo de la tâche" style="max-width:180px;max-height:140px;border-radius:8px;object-fit:cover;border:1px solid var(--border)"></div>`:""}<div class="row" style="margin-top:8px">${t.status!=="done"?`<button type="button" onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}${canAdmin?`<button type="button" class="danger" onclick="deleteTask('${t.id}')">Supprimer</button>`:""}</div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
 }
 function selectDay(ds){selectedDate=ds;renderCalendar()}
 function moveMonth(n){calDate.setMonth(calDate.getMonth()+n);renderCalendar()}
@@ -167,6 +167,10 @@ function addTask(){
 
       <label>3. Nom de l'opérateur</label>
       <input id="newTaskOperator" type="text" placeholder="Nom et prénom de l'opérateur">
+
+      <label>4. Photo (facultative)</label>
+      <input id="newTaskPhoto" type="file" accept="image/*" capture="environment">
+      <div class="small muted">Vous pouvez prendre une photo avec le téléphone ou choisir une image.</div>
 
       <div id="addTaskMsg" class="small" style="margin:8px 0"></div>
 
@@ -201,12 +205,25 @@ async function saveTask(){
   }
 
   try{
+    let photo_url=null;
+    const photoFile=document.getElementById("newTaskPhoto")?.files?.[0];
+    if(photoFile){
+      if(!photoFile.type.startsWith("image/")) throw new Error("Le fichier sélectionné doit être une image.");
+      if(photoFile.size>10*1024*1024) throw new Error("La photo doit faire moins de 10 Mo.");
+      const ext=(photoFile.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"")||"jpg";
+      const path=`${selectedDate}/${crypto.randomUUID()}.${ext}`;
+      const upload=await client.storage.from("task-photos").upload(path,photoFile,{upsert:false,contentType:photoFile.type});
+      if(upload.error)throw upload.error;
+      photo_url=client.storage.from("task-photos").getPublicUrl(path).data.publicUrl;
+    }
+
     const {error}=await client.from("tasks").insert({
       task_date:selectedDate,
       boat_name:boat,
       operator_name:operator,
       task:task,
-      status:"todo"
+      status:"todo",
+      photo_url:photo_url
     });
 
     if(error)throw error;
@@ -245,7 +262,8 @@ La tâche suivante a été marquée comme réalisée :
 Date : ${task.task_date}
 Bateau : ${task.boat_name}
 Opérateur : ${task.operator_name}
-Tâche : ${task.task}
+Tâche : ${task.task}${task.photo_url?`
+Photo : ${task.photo_url}`:""}
 
 Cordialement,
 CHECK VDP`;
@@ -260,6 +278,17 @@ async function deleteTask(id){
   }
 
   if(!confirm("Supprimer cette tâche ?"))return;
+
+  if(task.photo_url){
+    try{
+      const marker="/storage/v1/object/public/task-photos/";
+      const idx=task.photo_url.indexOf(marker);
+      if(idx>=0){
+        const path=decodeURIComponent(task.photo_url.slice(idx+marker.length));
+        await client.storage.from("task-photos").remove([path]);
+      }
+    }catch(e){console.warn("PHOTO DELETE WARNING",e)}
+  }
 
   const {error}=await client.from("tasks").delete().eq("id",id);
   if(error){

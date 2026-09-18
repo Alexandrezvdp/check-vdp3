@@ -152,3 +152,31 @@ create policy profiles_read on public.profiles for select to authenticated using
 -- insert into public.profiles(id,email,role)
 -- values ('UUID-OPERATEUR','operateur@example.com','operator')
 -- on conflict (id) do update set role='operator',email=excluded.email;
+
+
+-- Photos facultatives pour les tâches du planning.
+alter table public.tasks add column if not exists photo_url text;
+
+-- Stockage Supabase des photos de tâches. Le bucket est public afin que
+-- les miniatures puissent être affichées directement dans le planning.
+insert into storage.buckets (id, name, public)
+values ('task-photos', 'task-photos', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists task_photos_read on storage.objects;
+create policy task_photos_read
+on storage.objects for select
+to authenticated
+using (bucket_id = 'task-photos');
+
+drop policy if exists task_photos_insert on storage.objects;
+create policy task_photos_insert
+on storage.objects for insert
+to authenticated
+with check (bucket_id = 'task-photos' and public.is_admin());
+
+drop policy if exists task_photos_delete on storage.objects;
+create policy task_photos_delete
+on storage.objects for delete
+to authenticated
+using (bucket_id = 'task-photos' and public.is_admin());

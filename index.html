@@ -34,7 +34,7 @@ label{display:block;font-weight:700;font-size:13px;margin:9px 0 5px}
 .anomaly{margin-top:10px}.photos{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.photos img{width:90px;height:70px;object-fit:cover;border-radius:8px}
 .calendar-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:12px}.dow{font-size:11px;font-weight:800;color:var(--muted);text-align:center;padding:5px}.day{min-height:82px;background:white;border:1px solid var(--border);border-radius:8px;padding:7px;cursor:pointer}.day.other{opacity:.4}.day.sel{outline:3px solid #7bb5d0}.num{font-weight:800}.task-dot{font-size:11px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.task-done{text-decoration:line-through;opacity:.6}.task{border-left:5px solid var(--blue);padding:10px 12px;background:white;border:1px solid var(--border);border-radius:10px;margin:8px 0}.task.done{border-left-color:var(--ok)}
 table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;font-size:13px}
-.notice{padding:11px;border-radius:10px;background:#eef7fb;border:1px solid #cce3ed;margin:10px 0}.error{background:#fff0f0;border-color:#f1caca;color:#8c2222}
+.notice{padding:11px;border-radius:10px;background:#eef7fb;border:1px solid #cce3ed;margin:10px 0}.levelbox{background:#f8fbfc;border:1px solid #cfe0e7;border-radius:10px;padding:10px;margin-top:10px}.levelgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.error{background:#fff0f0;border-color:#f1caca;color:#8c2222}
 .login{max-width:430px;margin:50px auto}.right{text-align:right}
 @media(max-width:600px){main{padding:0 9px 30px}.day{min-height:65px;padding:5px}.task-dot{font-size:9px}.boat{align-items:flex-start;flex-direction:column}.choices button{flex:1}}
 </style>
@@ -55,14 +55,14 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <nav><div class="navin">
 <button data-page="home" class="active">⚓ Bateaux</button>
 <button data-page="calendar">📅 Planning</button>
-<button data-page="fluids">🛢️ Suivi niveaux</button>
+<button data-page="levels">🛢️ Suivi niveaux</button>
 <button data-page="admin" id="adminNav" class="hidden">⚙️ Administration</button>
 <button id="logoutBtn" class="secondary">Déconnexion</button>
 </div></nav>
 <main>
 <section id="page-home"></section>
 <section id="page-calendar" class="hidden"></section>
-<section id="page-fluids" class="hidden"></section>
+<section id="page-levels" class="hidden"></section>
 <section id="page-admin" class="hidden"></section>
 <section id="page-checklist" class="hidden"></section>
 </main>
@@ -82,44 +82,28 @@ const STANDARD=[
 "Essais appareil à gouverner normal et secours",
 "Démarrage moteurs + test Embrayage Av/Ar",
 "Vérification fonctionnement pompes de réfrigération moteur quand les moteurs sont en service",
-"Contrôle Chargeur(s) batteries 24V",
-"Essai Feux de navigation",
-"Essai GPS",
-"Essai VHF",
-"Essai Interphonie",
-"Essai Propulseur d'étrave",
-"Essai Micro/Sono",
-"Essai commande de l'appareil à gouverner normal et secours",
+"Essais : Feux de navigation, GPS, VHF, Interphonie, Propulseur d'étrave, Micro/Sono, commande de l'appareil à gouverner normal et secours",
 "Vérification AIS",
 "Essai bascule distribution électrique AFE",
-"Créer nouvelle croisière sur l'onglet journal de bord de BoatOn",
-"Valider tâche préparation journalière sur BoatOn"
+"Créer nouvelle croisière sur l'onglet journal de bord de BoatOn"
 ];
 const ETOILE=[
-"Vérification de l'ensemble des locaux (fuite, eau dans les fonds, bruits anormaux,...)",
+"Vérification de l'ensemble des locaux",
 "Vérification niveau liquide de refroidissement ligne d'arbre",
 "Vérification niveau huile appareil à gouverner",
 "Nettoyage des filtres eau brut",
-"Vérification niveau huile GENSET 1&2",
-"Vérification niveau liquide de refroidissement GENSET 1&2",
-"Vérification tension batteries à la timonerie",
-"Démarrage GENSET 1&2",
+"Vérification niveau huile + liquide de refroidissement GENSET 1 et 2",
+"Vérification tension batteries",
+"Démarrage GENSET 1 et 2",
 "Démarrage moteurs + test Embrayage Av/Ar",
-"Vérification pression huile GENSET 1&2",
+"Vérification pression huile GENSET 1 et 2",
 "Vérification circulation eaux de réfrigération échappement",
-"Essais Feux de navigation",
-"Essai GPS",
-"Essai VHF",
-"Essai Interphonie",
-"Essai Propulseur d'étrave",
-"Essai Micro/Sono",
-"Essai commande de l'appareil à gouverner normal et secours",
+"Essais : Feux de navigation, GPS, VHF, Interphonie, Propulseur d'étrave, Micro/Sono, commande de l'appareil à gouverner normal et secours",
 "Vérification AIS",
-"Vérification ventilateurs variateurs moteurs Bd & Td",
-"Vérification démarrage climatisation locaux techniques",
-"Vérifications de l'ensemble des alimentations 24V des tableaux électriques"
+"Vérification ventilateurs variateur moteur",
+"Alimentations 24 V"
 ];
-let profile=null,boats=[],items=[],tasks=[],fluidLogs=[];
+let profile=null,boats=[],items=[],tasks=[],levelRecords=[];
 let currentBoat=null,currentItems=[],answers={},photos={};
 let calDate=new Date(); let selectedDate=isoDate(new Date());
 
@@ -128,26 +112,6 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&l
 function fmt(d){return new Date(d+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
 function showPage(p){document.querySelectorAll("main>section").forEach(x=>x.classList.add("hidden"));document.getElementById("page-"+p).classList.remove("hidden");document.querySelectorAll("nav button[data-page]").forEach(x=>x.classList.toggle("active",x.dataset.page===p))}
 function setMsg(id,msg,error=false){let e=document.getElementById(id);if(e){e.textContent=msg;e.className="small"+(error?" error":"")}}
-
-function levelInfo(title){
- const t=String(title||"").toLowerCase();
- if(t.includes("niveau huile")){
-   let equipment="Autre";
-   if(t.includes("appareil à gouverner")) equipment="Appareil à gouverner";
-   else if(t.includes("étambot")) equipment="Étambot / lignes d'arbres";
-   else if(t.includes("genset")) equipment="GENSET 1&2";
-   else if(t.includes("moteur")) equipment="Moteurs";
-   return {fluid_type:"Huile",equipment};
- }
- if(t.includes("niveau liquide de refroidissement")){
-   let equipment="Autre";
-   if(t.includes("genset")) equipment="GENSET 1&2";
-   else if(t.includes("ligne d'arbre")) equipment="Ligne d'arbre";
-   else if(t.includes("moteur")) equipment="Moteurs";
-   return {fluid_type:"Liquide de refroidissement",equipment};
- }
- return null;
-}
 async function loadProfile(){
  const {data:{user}}=await client.auth.getUser(); if(!user){profile=null;return}
  const {data,error}=await client.from("profiles").select("*").eq("id",user.id).single();
@@ -159,10 +123,10 @@ async function loadData(){
  let r=await client.from("boats").select("*").order("sort_order"); if(r.error)throw r.error; boats=r.data||[];
  r=await client.from("checklist_items").select("*").eq("active",true).order("boat_id").order("position"); if(r.error)throw r.error; items=r.data||[];
  r=await client.from("tasks").select("*").order("task_date").order("created_at"); if(r.error)throw r.error; tasks=r.data||[];
- r=await client.from("fluid_logs").select("*").order("log_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error)throw r.error; fluidLogs=r.data||[];
+ r=await client.from("level_records").select("*").order("created_at",{ascending:false}); if(r.error)throw r.error; levelRecords=r.data||[];
 }
 function renderHome(){
- const html=`<div class="card"><h2>Les 5 bateaux</h2><p class="muted">Technique disponible. Suivi journalier des niveaux et consommations. Matin et Soir : à venir.</p></div><div class="grid">`+
+ const html=`<div class="card"><h2>Les 5 bateaux</h2><p class="muted">Technique disponible. Matin et Soir : à venir.</p></div><div class="grid">`+
  boats.map(b=>`<div class="card boat"><div><h3>⚓ ${esc(b.name)}</h3><span class="pill">🔧 Technique</span><span class="pill">☀️ Matin — à venir</span><span class="pill">🌙 Soir — à venir</span></div><button onclick="openChecklist('${b.id}')">Ouvrir</button></div>`).join("")+"</div>";
  document.getElementById("page-home").innerHTML=html;
 }
@@ -178,333 +142,150 @@ function renderCalendar(){
 function renderDayPanel(){
  const ts=tasks.filter(t=>t.task_date===selectedDate);
  const canAdmin=profile?.role==="admin";
- const canDelete=!!profile;
  document.getElementById("dayPanel").innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0;text-transform:capitalize">${fmt(selectedDate)}</h2><div class="small">${ts.length} tâche(s)</div></div>${canAdmin?'<button onclick="addTask()">＋ Ajouter une tâche</button>':""}</div>`+
- (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)}${t.operator_name?` · 👤 ${esc(t.operator_name)}`:""}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div>${t.photo_url?`<div style="margin-top:10px"><img src="${esc(t.photo_url)}" alt="Photo de la tâche" style="max-width:180px;max-height:140px;border-radius:8px;object-fit:cover;border:1px solid var(--border)"></div>`:""}<div class="row" style="margin-top:8px">${t.status!=="done"?`<button type="button" onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}${canDelete?`<button type="button" class="danger" onclick="deleteTask('${t.id}')">Supprimer</button>`:""}</div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
+ (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px">${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}${canAdmin?`<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button>`:""}</div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
 }
 function selectDay(ds){selectedDate=ds;renderCalendar()}
 function moveMonth(n){calDate.setMonth(calDate.getMonth()+n);renderCalendar()}
-function addTask(){
-  const panel=document.getElementById("dayPanel");
-  if(!panel)return;
-
-  const boatOptions=(boats.length
-    ? boats.map(b=>`<option value="${esc(b.name)}">${esc(b.name)}</option>`).join("")
-    : BOATS.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join(""));
-
-  panel.insertAdjacentHTML("beforeend",`
-    <div class="card" id="addTaskForm">
-      <h3 style="margin-top:0">＋ Nouvelle tâche</h3>
-
-      <label>1. Bateau</label>
-      <select id="newTaskBoat">
-        <option value="">— Choisir un bateau —</option>
-        ${boatOptions}
-      </select>
-
-      <label>2. Description de la tâche</label>
-      <textarea id="newTaskText" rows="3" placeholder="Décrire la tâche à réaliser"></textarea>
-
-      <label>3. Nom de l'opérateur (facultatif)</label>
-      <input id="newTaskOperator" type="text" placeholder="Nom et prénom de l'opérateur (facultatif)">
-
-      <label>4. Photo (facultative)</label>
-      <input id="newTaskPhoto" type="file" accept="image/*" capture="environment">
-      <div class="small muted">Vous pouvez prendre une photo avec le téléphone ou choisir une image.</div>
-
-      <div id="addTaskMsg" class="small" style="margin:8px 0"></div>
-
-      <div class="row">
-        <button type="button" onclick="saveTask()">✓ Enregistrer la tâche</button>
-        <button type="button" class="secondary" onclick="document.getElementById('addTaskForm')?.remove()">Annuler</button>
-      </div>
-    </div>`);
-
-  document.getElementById("newTaskBoat")?.focus();
+async function addTask(){
+ const boat=prompt("Bateau :\\n"+BOATS.join("\\n")); if(!boat||!BOATS.includes(boat))return;
+ const operator=prompt("Opérateur :"); if(!operator)return;
+ const task=prompt("Tâche :"); if(!task)return;
+ const {error}=await client.from("tasks").insert({task_date:selectedDate,boat_name:boat,operator_name:operator,task,status:"todo"});
+ if(error)alert(error.message);else{await refresh();renderCalendar()}
 }
-
-async function saveTask(){
-  const boat=document.getElementById("newTaskBoat")?.value;
-  const task=document.getElementById("newTaskText")?.value.trim();
-  const operator=document.getElementById("newTaskOperator")?.value.trim();
-  const msg=document.getElementById("addTaskMsg");
-
-  if(!boat||!task){
-    if(msg){
-      msg.textContent="Veuillez renseigner le bateau et la description de la tâche.";
-      msg.className="small error";
-    }
-    return;
-  }
-
-  const btn=document.querySelector("#addTaskForm button:not(.secondary)");
-  if(btn)btn.disabled=true;
-  if(msg){
-    msg.textContent="Enregistrement de la tâche…";
-    msg.className="small";
-  }
-
-  try{
-    let photo_url=null;
-    const photoFile=document.getElementById("newTaskPhoto")?.files?.[0];
-    if(photoFile){
-      if(!photoFile.type.startsWith("image/")) throw new Error("Le fichier sélectionné doit être une image.");
-      if(photoFile.size>10*1024*1024) throw new Error("La photo doit faire moins de 10 Mo.");
-      const ext=(photoFile.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"")||"jpg";
-      const path=`${selectedDate}/${crypto.randomUUID()}.${ext}`;
-      const upload=await client.storage.from("task-photos").upload(path,photoFile,{upsert:false,contentType:photoFile.type});
-      if(upload.error)throw upload.error;
-      photo_url=client.storage.from("task-photos").getPublicUrl(path).data.publicUrl;
-    }
-
-    const {error}=await client.from("tasks").insert({
-      task_date:selectedDate,
-      boat_name:boat,
-      operator_name:operator,
-      task:task,
-      status:"todo",
-      photo_url:photo_url
-    });
-
-    if(error)throw error;
-
-    await refresh();
-    renderCalendar();
-  }catch(e){
-    console.error("ADD TASK ERROR",e);
-    if(msg){
-      msg.textContent="Erreur lors de l'enregistrement : "+(e.message||e);
-      msg.className="small error";
-    }
-    if(btn)btn.disabled=false;
-  }
-}
-
+async function deleteTask(id){if(!confirm("Supprimer cette tâche ?"))return;let r=await client.from("tasks").delete().eq("id",id);if(r.error)alert(r.error.message);else{await refresh();renderCalendar()}}
 async function completeTask(id){
-  const task=tasks.find(t=>String(t.id)===String(id));
-  if(!task)return;
+ const t=tasks.find(x=>x.id===id); if(!t)return;
+ const {error}=await client.from("tasks").update({status:"done",completed_at:new Date().toISOString(),completed_by:profile?.id||null}).eq("id",id);
+ if(error){alert(error.message);return}
+ const subject=encodeURIComponent(`CHECK VDP — Tâche réalisée — ${t.boat_name} — ${t.task_date}`);
+ const body=encodeURIComponent(`Tâche réalisée\\n\\nDate : ${t.task_date}\\nBateau : ${t.boat_name}\\nOpérateur : ${t.operator_name}\\nTâche : ${t.task}`);
+ location.href=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${body}`;
+ await refresh();renderCalendar();
+}
+function openChecklist(id){currentBoat=boats.find(b=>b.id===id);currentItems=items.filter(i=>i.boat_id===id);answers={};photos={};renderChecklist();showPage("checklist")}
 
-  const {error}=await client.from("tasks").update({status:"done"}).eq("id",id);
-  if(error){
-    alert("Impossible de marquer la tâche comme réalisée : "+error.message);
-    console.error("COMPLETE TASK ERROR",error);
-    return;
+function levelSpec(boatName,title){
+  const t=(title||"").toLowerCase();
+  const standard=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse"].includes(boatName);
+  if(standard && t.includes("huile") && t.includes("appareil à gouverner"))
+    return [{key:"gouvernail_huile",label:"Appareil à gouverner",fluid:"Huile",equipment:"Appareil à gouverner",side:""}];
+  if(standard && t.includes("huile") && t.includes("étambot"))
+    return [
+      {key:"etambot_huile_bd",label:"Étambot ligne d’arbre Bâbord",fluid:"Huile",equipment:"Étambot ligne d’arbre",side:"Bâbord"},
+      {key:"etambot_huile_td",label:"Étambot ligne d’arbre Tribord",fluid:"Huile",equipment:"Étambot ligne d’arbre",side:"Tribord"}
+    ];
+  if(standard && t.includes("liquide de refroidissement") && t.includes("moteur"))
+    return [
+      {key:"moteur_lrc_bd",label:"Moteur Bâbord",fluid:"Liquide de refroidissement",equipment:"Moteur",side:"Bâbord"},
+      {key:"moteur_lrc_td",label:"Moteur Tribord",fluid:"Liquide de refroidissement",equipment:"Moteur",side:"Tribord"}
+    ];
+  if(boatName==="Paris Etoile" && t.includes("liquide de refroidissement") && t.includes("ligne d'arbre"))
+    return [
+      {key:"ligne_arbre_lrc_bd",label:"Ligne d’arbre Bâbord",fluid:"Liquide de refroidissement",equipment:"Ligne d’arbre",side:"Bâbord"},
+      {key:"ligne_arbre_lrc_td",label:"Ligne d’arbre Tribord",fluid:"Liquide de refroidissement",equipment:"Ligne d’arbre",side:"Tribord"}
+    ];
+  if(boatName==="Paris Etoile" && t.includes("huile") && t.includes("appareil à gouverner"))
+    return [{key:"gouvernail_huile",label:"Appareil à gouverner",fluid:"Huile",equipment:"Appareil à gouverner",side:""}];
+  if(boatName==="Paris Etoile" && t.includes("genset")){
+    const out=[];
+    if(t.includes("huile")){
+      out.push({key:"genset1_huile",label:"GENSET 1 — Huile",fluid:"Huile",equipment:"GENSET",side:"1"});
+      out.push({key:"genset2_huile",label:"GENSET 2 — Huile",fluid:"Huile",equipment:"GENSET",side:"2"});
+    }
+    if(t.includes("liquide de refroidissement")){
+      out.push({key:"genset1_lrc",label:"GENSET 1 — Liquide de refroidissement",fluid:"Liquide de refroidissement",equipment:"GENSET",side:"1"});
+      out.push({key:"genset2_lrc",label:"GENSET 2 — Liquide de refroidissement",fluid:"Liquide de refroidissement",equipment:"GENSET",side:"2"});
+    }
+    return out;
   }
-
-  await refresh();
-  renderCalendar();
-
-  const subject=`TECHNIQUE VDP — Tâche réalisée — ${task.boat_name} — ${task.task_date}`;
-  const body=`Bonjour,
-
-La tâche suivante a été marquée comme réalisée :
-
-Date : ${task.task_date}
-Bateau : ${task.boat_name}
-Opérateur : ${task.operator_name}
-Tâche : ${task.task}${task.photo_url?`
-Photo : ${task.photo_url}`:""}
-
-Cordialement,
-TECHNIQUE VDP`;
-
-  window.location.href=`mailto:a.zinzius@vedettesdeparis.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return [];
+}
+function levelInputs(it,a){
+  const specs=levelSpec(currentBoat.name,it.title);
+  if(a.status!=="anomaly" || !specs.length) return "";
+  return `<div class="levelbox"><b>🛢️ Appoint de niveau</b><div class="small">Quantité réellement ajoutée, en litres.</div><div class="levelgrid">${specs.map(s=>`<div><label>${esc(s.label)} — litres</label><input type="number" min="0" step="0.1" inputmode="decimal" id="qty-${it.id}-${s.key}" value="${a.levels?.[s.key]??""}" placeholder="0"></div>`).join("")}</div></div>`;
+}
+async function saveChecklistLevels(tech,date){
+  const rows=[];
+  currentItems.forEach(it=>{
+    const a=answers[it.id]||{};
+    if(a.status!=="anomaly") return;
+    levelSpec(currentBoat.name,it.title).forEach(s=>{
+      const el=document.getElementById(`qty-${it.id}-${s.key}`);
+      const q=el?parseFloat(el.value):0;
+      if(Number.isFinite(q)&&q>0) rows.push({boat_name:currentBoat.name,equipment:s.equipment,fluid:s.fluid,side:s.side,quantity_liters:q,source:"checklist",checklist_item_title:it.title,checklist_date:date,operator_name:tech,observation:a.desc||""});
+    });
+  });
+  if(!rows.length)return;
+  const {error}=await client.from("level_records").insert(rows);
+  if(error)throw error;
+}
+function levelTotal(boat,equipment,fluid,side){
+  return levelRecords.filter(x=>x.boat_name===boat&&x.equipment===equipment&&x.fluid===fluid&&x.side===side).reduce((s,x)=>s+Number(x.quantity_liters||0),0);
+}
+function renderLevels(){
+  const defs=[
+    ["Paris Iéna","Vérification niveau huile appareil à gouverner","Vérification niveau huile étambot lignes d'arbres","Vérification niveau liquide de refroidissement moteurs"],
+    ["Paris Trocadéro","Vérification niveau huile appareil à gouverner","Vérification niveau huile étambot lignes d'arbres","Vérification niveau liquide de refroidissement moteurs"],
+    ["Paris Montmartre","Vérification niveau huile appareil à gouverner","Vérification niveau huile étambot lignes d'arbres","Vérification niveau liquide de refroidissement moteurs"],
+    ["Paris Montparnasse","Vérification niveau huile appareil à gouverner","Vérification niveau huile étambot lignes d'arbres","Vérification niveau liquide de refroidissement moteurs"],
+    ["Paris Etoile","Vérification niveau liquide de refroidissement ligne d'arbre","Vérification niveau huile appareil à gouverner","Vérification niveau huile GENSET 1 et 2","Vérification liquide de refroidissement GENSET 1 et 2"]
+  ];
+  let cards="";
+  defs.forEach(d=>{
+    const specs=[...d.slice(1).flatMap(t=>levelSpec(d[0],t))];
+    cards+=`<div class="card"><h3>⚓ ${esc(d[0])}</h3><div class="grid">${specs.map(s=>`<div class="item"><b>${esc(s.label)}</b><div style="font-size:24px;margin-top:6px">${levelTotal(d[0],s.equipment,s.fluid,s.side).toFixed(1)} L</div><div class="small">Cumul des appoints</div></div>`).join("")}</div></div>`;
+  });
+  const manual=`<div class="card"><h2>＋ Ajouter un appoint manuel</h2><div class="levelgrid">
+  <div><label>Bateau</label><select id="manualBoat" onchange="updateManualEquipment()">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div>
+  <div><label>Équipement</label><select id="manualEquipment"></select></div>
+  <div><label>Fluide</label><select id="manualFluid"><option>Huile</option><option>Liquide de refroidissement</option></select></div>
+  <div><label>Bâbord / Tribord / N°</label><select id="manualSide"><option value="">—</option><option>Bâbord</option><option>Tribord</option><option>1</option><option>2</option></select></div>
+  <div><label>Quantité (litres)</label><input id="manualQty" type="number" min="0" step="0.1" inputmode="decimal"></div>
+  <div><label>Observation</label><input id="manualObs" placeholder="Facultatif"></div></div><div style="margin-top:10px"><button onclick="addManualLevel()">Enregistrer l’appoint</button></div></div>`;
+  const hist=`<div class="card"><h2>Historique des appoints</h2>${levelRecords.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Bateau</th><th>Équipement</th><th>Fluide</th><th>Côté/N°</th><th>Qté</th><th>Origine</th><th>Opérateur</th></tr></thead><tbody>${levelRecords.map(x=>`<tr><td>${esc(x.checklist_date||String(x.created_at||"").slice(0,10))}</td><td>${esc(x.boat_name)}</td><td>${esc(x.equipment)}</td><td>${esc(x.fluid)}</td><td>${esc(x.side||"—")}</td><td>${Number(x.quantity_liters||0).toFixed(1)} L</td><td>${x.source==="checklist"?"Checklist":"Manuel"}</td><td>${esc(x.operator_name||"")}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Aucun appoint enregistré.</p>`}</div>`;
+  document.getElementById("page-levels").innerHTML=`<div class="card"><h2>🛢️ Suivi niveaux</h2><p class="muted">Cumuls séparés par bateau, équipement, fluide et côté/numéro.</p></div>`+cards+manual+hist;
+  updateManualEquipment();
+}
+function updateManualEquipment(){
+  const b=document.getElementById("manualBoat"),e=document.getElementById("manualEquipment"); if(!b||!e)return;
+  const opts=b.value==="Paris Etoile"?["Ligne d’arbre","Appareil à gouverner","GENSET"]:["Appareil à gouverner","Étambot ligne d’arbre","Moteur"];
+  e.innerHTML=opts.map(x=>`<option>${x}</option>`).join("");
+}
+async function addManualLevel(){
+  const boat=document.getElementById("manualBoat").value,equipment=document.getElementById("manualEquipment").value,fluid=document.getElementById("manualFluid").value,side=document.getElementById("manualSide").value,qty=parseFloat(document.getElementById("manualQty").value),obs=document.getElementById("manualObs").value.trim();
+  if(!Number.isFinite(qty)||qty<=0){alert("Indiquez une quantité supérieure à 0.");return}
+  if(["Moteur","Étambot ligne d’arbre","Ligne d’arbre","GENSET"].includes(equipment)&&!side){alert("Indiquez Bâbord, Tribord ou le numéro.");return}
+  const {data:{user}}=await client.auth.getUser();
+  const {error}=await client.from("level_records").insert({boat_name:boat,equipment,fluid,side,quantity_liters:qty,source:"manual",operator_name:user?.email||"",observation:obs});
+  if(error){alert(error.message);return}
+  await loadData();renderLevels();alert("Appoint enregistré.");
 }
 
-async function deleteTask(id){
-  if(!profile){
-    alert("Vous devez être connecté pour supprimer une tâche.");
-    return;
-  }
-
-  if(!confirm("Supprimer cette tâche ?"))return;
-
-  const task=tasks.find(t=>String(t.id)===String(id));
-  if(!task)return;
-
-  if(task.photo_url){
-    try{
-      const marker="/storage/v1/object/public/task-photos/";
-      const idx=task.photo_url.indexOf(marker);
-      if(idx>=0){
-        const path=decodeURIComponent(task.photo_url.slice(idx+marker.length));
-        await client.storage.from("task-photos").remove([path]);
-      }
-    }catch(e){console.warn("PHOTO DELETE WARNING",e)}
-  }
-
-  const {error}=await client.from("tasks").delete().eq("id",id);
-  if(error){
-    alert("Impossible de supprimer la tâche : "+error.message);
-    console.error("DELETE TASK ERROR",error);
-    return;
-  }
-
-  await refresh();
-  renderCalendar();
-}
-
-function renderFluids(){
- const today=isoDate(new Date());
- const recent=fluidLogs.slice(0,50);
- const totalByBoat={};
- const groups={};
- fluidLogs.forEach(x=>{
-   const q=Number(x.quantity_added||0);
-   if(q) totalByBoat[x.boat_name]=(totalByBoat[x.boat_name]||0)+q;
-   const key=`${x.boat_name}|||${x.equipment}|||${x.fluid_type}`;
-   if(!groups[key]) groups[key]={boat_name:x.boat_name,equipment:x.equipment,fluid_type:x.fluid_type,total:0,count:0};
-   if(q){groups[key].total+=q;groups[key].count++;}
- });
- const groupRows=Object.values(groups).sort((a,b)=>
-   `${a.boat_name}${a.equipment}${a.fluid_type}`.localeCompare(`${b.boat_name}${b.equipment}${b.fluid_type}`,"fr")
- );
- document.getElementById("page-fluids").innerHTML=`
- <div class="card"><h2>🛢️ Suivi des niveaux et appoints</h2>
- <p class="muted">Les anomalies de niveau saisies dans les check-lists alimentent automatiquement cet historique. Vous pouvez aussi enregistrer un appoint manuel.</p></div>
- <div class="card"><h3>＋ Ajouter un appoint manuel</h3>
- <label>Date</label><input id="fluidDate" type="date" value="${today}">
- <label>Bateau</label><select id="fluidBoat"><option value="">— Choisir un bateau —</option>${boats.map(b=>`<option value="${esc(b.name)}">${esc(b.name)}</option>`).join("")}</select>
- <label>Équipement</label><input id="fluidEquipment" placeholder="Ex. moteur bâbord, appareil à gouverner, GENSET 1">
- <label>Fluide</label><select id="fluidType"><option value="">— Choisir —</option><option>Huile</option><option>Liquide de refroidissement</option><option>Autre</option></select>
- <label>Quantité ajoutée (litres)</label><input id="fluidQty" type="number" min="0" step="0.1" placeholder="Ex. 2,5">
- <label>Niveau / observation</label><input id="fluidLevel" placeholder="Ex. appoint manuel">
- <label>Opérateur (facultatif)</label><input id="fluidOperator" placeholder="Nom et prénom">
- <div id="fluidMsg" class="small" style="margin-top:8px"></div><button onclick="saveFluidLog()">✓ Enregistrer l'appoint</button></div>
- <div class="card"><h3>Cumul des appoints par bateau</h3>
- ${boats.map(b=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--border)"><span class="grow">⚓ ${esc(b.name)}</span><b>${(totalByBoat[b.name]||0).toFixed(1)} L</b></div>`).join("")}</div>
- <div class="card"><h3>Historique par équipement</h3>
- ${groupRows.length?`<div style="overflow:auto"><table><thead><tr><th>Bateau</th><th>Équipement</th><th>Fluide</th><th>Cumul</th><th>Appoints</th></tr></thead><tbody>
- ${groupRows.map(g=>`<tr><td>${esc(g.boat_name)}</td><td>${esc(g.equipment)}</td><td>${esc(g.fluid_type)}</td><td><b>${g.total.toFixed(1)} L</b></td><td>${g.count}</td></tr>`).join("")}
- </tbody></table></div>`:"<p class='muted'>Aucun appoint enregistré.</p>"}</div>
- <div class="card"><h3>Derniers appoints</h3>
- ${recent.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Origine</th><th>Bateau</th><th>Équipement</th><th>Fluide</th><th>Qté</th><th>Observation</th><th>Opérateur</th>${profile?.role==="admin"?"<th></th>":""}</tr></thead><tbody>
- ${recent.map(x=>`<tr><td>${esc(x.log_date)}</td><td>${esc(x.source||"Manuel")}</td><td>${esc(x.boat_name)}</td><td>${esc(x.equipment)}</td><td>${esc(x.fluid_type)}</td><td>${x.quantity_added==null?"":esc(x.quantity_added)+" L"}</td><td>${esc(x.level_observation||"")}</td><td>${esc(x.operator_name||"")}</td>${profile?.role==="admin"?`<td><button class="danger" onclick="deleteFluidLog('${x.id}')">Supprimer</button></td>`:""}</tr>`).join("")}
- </tbody></table></div>`:"<p class='muted'>Aucun appoint enregistré.</p>"}</div>`;
-}
-async function saveFluidLog(){
- const log_date=document.getElementById("fluidDate").value;
- const boat_name=document.getElementById("fluidBoat").value;
- const equipment=document.getElementById("fluidEquipment").value.trim();
- const fluid_type=document.getElementById("fluidType").value;
- const quantity=document.getElementById("fluidQty").value;
- const level=document.getElementById("fluidLevel").value.trim();
- const operator=document.getElementById("fluidOperator").value.trim();
- const msg=document.getElementById("fluidMsg");
- if(!log_date||!boat_name||!equipment||!fluid_type||quantity===""){
-   msg.textContent="Date, bateau, équipement, fluide et quantité sont obligatoires.";
-   msg.className="small error"; return;
- }
- const quantity_added=Number(quantity);
- if(!Number.isFinite(quantity_added)||quantity_added<0){
-   msg.textContent="La quantité doit être un nombre positif.";
-   msg.className="small error"; return;
- }
- const {error}=await client.from("fluid_logs").insert({
-   log_date,boat_name,equipment,fluid_type,quantity_added,
-   level_observation:level||"Appoint manuel",
-   operator_name:operator||null,
-   source:"Manuel",
-   created_by:profile?.id||null
- });
- if(error){msg.textContent=error.message;msg.className="small error";return}
- await refresh(); renderFluids();
-}
-async function deleteFluidLog(id){if(profile?.role!=="admin")return;if(!confirm("Supprimer ce relevé ?"))return;const {error}=await client.from("fluid_logs").delete().eq("id",id);if(error){alert(error.message);return}await refresh();renderFluids()}
-
-function openChecklist(id){
- currentBoat=boats.find(b=>b.id===id);
- currentItems=items.filter(i=>i.boat_id===id).sort((a,b)=>a.position-b.position);
- answers={}; photos={}; renderChecklist(); showPage("checklist");
-}
 function renderChecklist(){
- const b=currentBoat;
- const tech=document.getElementById("techName")?.value||"";
- const date=document.getElementById("techDate")?.value||isoDate(new Date());
- document.getElementById("page-checklist").innerHTML=
- `<div class="card"><div class="row"><button class="secondary" onclick="showPage('home')">← Retour</button><div class="grow"><h2 style="margin:0">🔧 Technique — ${esc(b.name)}</h2></div></div>
- <label>Nom du technicien</label><input id="techName" value="${esc(tech)}" placeholder="Nom et prénom">
- <label>Date</label><input id="techDate" type="date" value="${esc(date)}"></div>`+
- currentItems.map((it,n)=>{
-   let a=answers[it.id]||{};
-   const li=levelInfo(it.title);
-   return `<div class="item"><div class="item-title">${n+1}. ${esc(it.title)}</div>
-   <div class="choices">
-   <button class="${a.status==="ok"?"sel-ok":""}" onclick="answer('${it.id}','ok')">✓ Conforme</button>
-   <button class="${a.status==="anomaly"?"sel-anom":""}" onclick="answer('${it.id}','anomaly')">⚠ Anomalie</button>
-   <button class="${a.status==="na"?"sel-na":""}" onclick="answer('${it.id}','na')">— N/A</button></div>
-   ${a.status==="anomaly"?`<div class="anomaly">
-   <label>Description obligatoire</label>
-   <textarea id="desc-${it.id}" oninput="answers['${it.id}'].desc=this.value" placeholder="Décrire l'anomalie">${esc(a.desc||"")}</textarea>
-   ${li?`<label>Quantité rajoutée (litres) <span class="small">— ${esc(li.fluid_type)} · ${esc(li.equipment)}</span></label>
-   <input id="qty-${it.id}" type="number" min="0" step="0.1" value="${a.quantity_added??""}" oninput="answers['${it.id}'].quantity_added=this.value" placeholder="Ex. 2,5">`:""}
-   <label>Photo(s)</label><input type="file" accept="image/*" capture="environment" multiple onchange="addPhotos('${it.id}',this.files)">
-   <div class="photos">${(a.photos||[]).map(p=>`<img src="${p}">`).join("")}</div>
-   </div>`:""}</div>`
- }).join("")+
- `<div class="card"><button style="width:100%" onclick="validateChecklist()">✓ Valider et préparer l'e-mail</button>
- <p class="small">Les anomalies de niveau avec une quantité ajoutée sont automatiquement enregistrées dans 🛢️ Suivi niveaux.</p></div>`;
+ const b=currentBoat; document.getElementById("page-checklist").innerHTML=`<div class="card"><div class="row"><button class="secondary" onclick="showPage('home')">← Retour</button><div class="grow"><h2 style="margin:0">🔧 Technique — ${esc(b.name)}</h2></div></div><label>Nom du technicien</label><input id="techName" placeholder="Nom et prénom"><label>Date</label><input id="techDate" type="date" value="${isoDate(new Date())}"></div>`+
+ currentItems.map((it,n)=>{let a=answers[it.id]||{};return `<div class="item"><div class="item-title">${n+1}. ${esc(it.title)}</div><div class="choices"><button class="${a.status==="ok"?"sel-ok":""}" onclick="answer('${it.id}','ok')">✓ Conforme</button><button class="${a.status==="anomaly"?"sel-anom":""}" onclick="answer('${it.id}','anomaly')">⚠ Anomalie</button><button class="${a.status==="na"?"sel-na":""}" onclick="answer('${it.id}','na')">— N/A</button></div>${a.status==="anomaly"?`<div class="anomaly"><label>Description obligatoire</label><textarea id="desc-${it.id}" oninput="answers['${it.id}'].desc=this.value" placeholder="Décrire l'anomalie">${esc(a.desc||"")}</textarea>${levelInputs(it,a)}<label>Photo(s)</label><input type="file" accept="image/*" capture="environment" multiple onchange="addPhotos('${it.id}',this.files)"><div class="photos">${(a.photos||[]).map(p=>`<img src="${p}">`).join("")}</div></div>`:""}</div>`}).join("")+
+ `<div class="card"><button style="width:100%" onclick="validateChecklist()">✓ Valider et préparer l'e-mail</button><p class="small">Le résultat n'est pas enregistré comme fiche serveur. L'e-mail s'ouvre dans l'application de messagerie de l'appareil et doit être envoyé manuellement.</p></div>`;
 }
-function answer(id,status){
- const tech=document.getElementById("techName")?.value||"";
- const date=document.getElementById("techDate")?.value||isoDate(new Date());
- answers[id]=answers[id]||{};
- answers[id].status=status;
- renderChecklist();
- document.getElementById("techName").value=tech;
- document.getElementById("techDate").value=date;
-}
-function addPhotos(id,files){
- answers[id]=answers[id]||{};answers[id].photos=answers[id].photos||[];
- [...files].forEach(f=>{let r=new FileReader();r.onload=()=>{answers[id].photos.push(r.result);renderChecklist()};r.readAsDataURL(f)})
-}
-async function validateChecklist(){
+function answer(id,status){answers[id]=answers[id]||{};answers[id].status=status;renderChecklist()}
+function addPhotos(id,files){answers[id]=answers[id]||{};answers[id].photos=answers[id].photos||[];[...files].forEach(f=>{let r=new FileReader();r.onload=()=>{answers[id].photos.push(r.result);renderChecklist()};r.readAsDataURL(f)})}
+function validateChecklist(){
  const tech=document.getElementById("techName").value.trim(),date=document.getElementById("techDate").value;
  if(!tech||!date){alert("Nom du technicien et date obligatoires.");return}
  const missing=currentItems.filter(i=>!answers[i.id]?.status);
  if(missing.length){alert("Tous les points doivent être renseignés.");return}
  const bad=currentItems.filter(i=>answers[i.id].status==="anomaly"&&!String(answers[i.id].desc||"").trim());
  if(bad.length){alert("Une description est obligatoire pour chaque anomalie.");return}
- const levelAnomalies=currentItems.filter(i=>answers[i.id].status==="anomaly"&&levelInfo(i.title));
- const missingQty=levelAnomalies.filter(i=>answers[i.id].quantity_added===""||answers[i.id].quantity_added==null||!Number.isFinite(Number(answers[i.id].quantity_added))||Number(answers[i.id].quantity_added)<0);
- if(missingQty.length){
-   alert("Pour chaque anomalie de niveau, indiquez la quantité rajoutée en litres.");
-   return;
- }
  const anomalies=currentItems.filter(i=>answers[i.id].status==="anomaly");
- for(const it of levelAnomalies){
-   const li=levelInfo(it.title);
-   const q=Number(answers[it.id].quantity_added);
-   const {error}=await client.from("fluid_logs").insert({
-     log_date:date,
-     boat_name:currentBoat.name,
-     equipment:li.equipment,
-     fluid_type:li.fluid_type,
-     quantity_added:q,
-     level_observation:`Checklist — ${it.title} — ${String(answers[it.id].desc||"").trim()}`,
-     operator_name:tech,
-     source:"Checklist",
-     created_by:profile?.id||null
-   });
-   if(error){
-     alert("Impossible d'enregistrer le suivi de niveau : "+error.message);
-     console.error("CHECKLIST FLUID LOG ERROR",error);
-     return;
-   }
- }
- let body=`TECHNIQUE VDP — CHECKLIST TECHNIQUE\n\nBateau : ${currentBoat.name}\nDate : ${date}\nTechnicien : ${tech}\n\n`;
- if(!anomalies.length) body+="AUCUNE ANOMALIE CONSTATÉE.\n";
- else{
-   body+="ANOMALIES :\n";
-   anomalies.forEach((it,i)=>{
-     const li=levelInfo(it.title);
-     body+=`${i+1}. ${it.title}\n   ${answers[it.id].desc}\n`;
-     if(li) body+=`   Quantité rajoutée : ${answers[it.id].quantity_added} L\n`;
-   });
- }
- body+="\nLes photos éventuelles doivent être jointes manuellement à l'e-mail.";
- const subject=encodeURIComponent(`TECHNIQUE VDP — ${currentBoat.name} — ${date}`);
+ saveChecklistLevels(tech,date).then(()=>{
+ let body=`CHECK VDP — CHECKLIST TECHNIQUE\\n\\nBateau : ${currentBoat.name}\\nDate : ${date}\\nTechnicien : ${tech}\\n\\n`;
+ if(!anomalies.length)body+="AUCUNE ANOMALIE CONSTATÉE.\\n";else{body+="ANOMALIES :\\n";anomalies.forEach((it,i)=>body+=`${i+1}. ${it.title}\\n   ${answers[it.id].desc}\\n`)}
+ body+="\\nLes photos éventuelles doivent être jointes manuellement à l'e-mail.";
+ const subject=encodeURIComponent(`CHECK VDP — ${currentBoat.name} — ${date}`);
  location.href=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
+ }).catch(e=>alert("La checklist est prête, mais l’enregistrement des appoints a échoué : "+e.message));
 }
 function renderAdmin(){
  if(profile?.role!=="admin")return;
@@ -518,11 +299,11 @@ async function adminMove(id,dir){
  let list=items.filter(i=>i.boat_id===items.find(x=>x.id===id).boat_id).sort((a,b)=>a.position-b.position),idx=list.findIndex(x=>x.id===id),j=idx+dir;if(j<0||j>=list.length)return;
  let a=list[idx],b=list[j];await client.from("checklist_items").update({position:b.position}).eq("id",a.id);await client.from("checklist_items").update({position:a.position}).eq("id",b.id);await refresh();renderAdmin()
 }
-async function refresh(){await loadData();renderHome();renderAdmin();if(!document.getElementById("page-fluids").classList.contains("hidden"))renderFluids()}
-document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="fluids")renderFluids();if(b.dataset.page==="admin")renderAdmin()});
+async function refresh(){await loadData();renderHome();renderAdmin();if(!document.getElementById("page-levels").classList.contains("hidden"))renderLevels()}
+document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="admin")renderAdmin()});
 document.getElementById("loginBtn").onclick=async()=>{let e=loginEmail.value.trim(),p=loginPassword.value;setMsg("loginMsg","Connexion…");let r=await client.auth.signInWithPassword({email:e,password:p});if(r.error)setMsg("loginMsg",r.error.message,true);else startApp()};
 document.getElementById("logoutBtn").onclick=async()=>{await client.auth.signOut();location.reload()};
-async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderFluids();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
+async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderLevels();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
 client.auth.onAuthStateChange((_event,session)=>{if(session&&!profile)startApp()});
 (async()=>{const {data:{session}}=await client.auth.getSession();if(session)startApp()})();
 </script>

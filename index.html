@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b4f71">
 <link rel="manifest" href="manifest.webmanifest">
-<title>CHECK VDP</title>
+<title>TECHNIQUE VDP</title>
 <style>
 :root{--blue:#0b4f71;--blue2:#eaf5fa;--bg:#f5f7f9;--text:#17212b;--ok:#197a4b;--warn:#a55b00;--muted:#66727d;--card:#fff;--border:#d9e0e5}
 *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
@@ -40,7 +40,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 </style>
 </head>
 <body>
-<header><div class="header-row"><h1>⚓ CHECK VDP</h1><div class="user" id="userBox"></div></div></header>
+<header><div class="header-row"><h1>⚓ TECHNIQUE VDP</h1><div class="user" id="userBox"></div></div></header>
 <div id="loginView" class="login">
   <div class="card">
     <h2>Connexion</h2>
@@ -55,12 +55,14 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <nav><div class="navin">
 <button data-page="home" class="active">⚓ Bateaux</button>
 <button data-page="calendar">📅 Planning</button>
+<button data-page="fluids">🛢️ Suivi niveaux</button>
 <button data-page="admin" id="adminNav" class="hidden">⚙️ Administration</button>
 <button id="logoutBtn" class="secondary">Déconnexion</button>
 </div></nav>
 <main>
 <section id="page-home"></section>
 <section id="page-calendar" class="hidden"></section>
+<section id="page-fluids" class="hidden"></section>
 <section id="page-admin" class="hidden"></section>
 <section id="page-checklist" class="hidden"></section>
 </main>
@@ -80,28 +82,44 @@ const STANDARD=[
 "Essais appareil à gouverner normal et secours",
 "Démarrage moteurs + test Embrayage Av/Ar",
 "Vérification fonctionnement pompes de réfrigération moteur quand les moteurs sont en service",
-"Essais : Feux de navigation, GPS, VHF, Interphonie, Propulseur d'étrave, Micro/Sono, commande de l'appareil à gouverner normal et secours",
+"Contrôle Chargeur(s) batteries 24V",
+"Essai Feux de navigation",
+"Essai GPS",
+"Essai VHF",
+"Essai Interphonie",
+"Essai Propulseur d'étrave",
+"Essai Micro/Sono",
+"Essai commande de l'appareil à gouverner normal et secours",
 "Vérification AIS",
 "Essai bascule distribution électrique AFE",
-"Créer nouvelle croisière sur l'onglet journal de bord de BoatOn"
+"Créer nouvelle croisière sur l'onglet journal de bord de BoatOn",
+"Valider tâche préparation journalière sur BoatOn"
 ];
 const ETOILE=[
-"Vérification de l'ensemble des locaux",
+"Vérification de l'ensemble des locaux (fuite, eau dans les fonds, bruits anormaux,...)",
 "Vérification niveau liquide de refroidissement ligne d'arbre",
 "Vérification niveau huile appareil à gouverner",
 "Nettoyage des filtres eau brut",
-"Vérification niveau huile + liquide de refroidissement GENSET 1 et 2",
-"Vérification tension batteries",
-"Démarrage GENSET 1 et 2",
+"Vérification niveau huile GENSET 1&2",
+"Vérification niveau liquide de refroidissement GENSET 1&2",
+"Vérification tension batteries à la timonerie",
+"Démarrage GENSET 1&2",
 "Démarrage moteurs + test Embrayage Av/Ar",
-"Vérification pression huile GENSET 1 et 2",
+"Vérification pression huile GENSET 1&2",
 "Vérification circulation eaux de réfrigération échappement",
-"Essais : Feux de navigation, GPS, VHF, Interphonie, Propulseur d'étrave, Micro/Sono, commande de l'appareil à gouverner normal et secours",
+"Essais Feux de navigation",
+"Essai GPS",
+"Essai VHF",
+"Essai Interphonie",
+"Essai Propulseur d'étrave",
+"Essai Micro/Sono",
+"Essai commande de l'appareil à gouverner normal et secours",
 "Vérification AIS",
-"Vérification ventilateurs variateur moteur",
-"Alimentations 24 V"
+"Vérification ventilateurs variateurs moteurs Bd & Td",
+"Vérification démarrage climatisation locaux techniques",
+"Vérifications de l'ensemble des alimentations 24V des tableaux électriques"
 ];
-let profile=null,boats=[],items=[],tasks=[];
+let profile=null,boats=[],items=[],tasks=[],fluidLogs=[];
 let currentBoat=null,currentItems=[],answers={},photos={};
 let calDate=new Date(); let selectedDate=isoDate(new Date());
 
@@ -121,9 +139,10 @@ async function loadData(){
  let r=await client.from("boats").select("*").order("sort_order"); if(r.error)throw r.error; boats=r.data||[];
  r=await client.from("checklist_items").select("*").eq("active",true).order("boat_id").order("position"); if(r.error)throw r.error; items=r.data||[];
  r=await client.from("tasks").select("*").order("task_date").order("created_at"); if(r.error)throw r.error; tasks=r.data||[];
+ r=await client.from("fluid_logs").select("*").order("log_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error)throw r.error; fluidLogs=r.data||[];
 }
 function renderHome(){
- const html=`<div class="card"><h2>Les 5 bateaux</h2><p class="muted">Technique disponible. Matin et Soir : à venir.</p></div><div class="grid">`+
+ const html=`<div class="card"><h2>Les 5 bateaux</h2><p class="muted">Technique disponible. Suivi journalier des niveaux et consommations. Matin et Soir : à venir.</p></div><div class="grid">`+
  boats.map(b=>`<div class="card boat"><div><h3>⚓ ${esc(b.name)}</h3><span class="pill">🔧 Technique</span><span class="pill">☀️ Matin — à venir</span><span class="pill">🌙 Soir — à venir</span></div><button onclick="openChecklist('${b.id}')">Ouvrir</button></div>`).join("")+"</div>";
  document.getElementById("page-home").innerHTML=html;
 }
@@ -139,8 +158,9 @@ function renderCalendar(){
 function renderDayPanel(){
  const ts=tasks.filter(t=>t.task_date===selectedDate);
  const canAdmin=profile?.role==="admin";
+ const canDelete=!!profile;
  document.getElementById("dayPanel").innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0;text-transform:capitalize">${fmt(selectedDate)}</h2><div class="small">${ts.length} tâche(s)</div></div>${canAdmin?'<button onclick="addTask()">＋ Ajouter une tâche</button>':""}</div>`+
- (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div>${t.photo_url?`<div style="margin-top:10px"><img src="${esc(t.photo_url)}" alt="Photo de la tâche" style="max-width:180px;max-height:140px;border-radius:8px;object-fit:cover;border:1px solid var(--border)"></div>`:""}<div class="row" style="margin-top:8px">${t.status!=="done"?`<button type="button" onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}${canAdmin?`<button type="button" class="danger" onclick="deleteTask('${t.id}')">Supprimer</button>`:""}</div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
+ (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)}${t.operator_name?` · 👤 ${esc(t.operator_name)}`:""}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div>${t.photo_url?`<div style="margin-top:10px"><img src="${esc(t.photo_url)}" alt="Photo de la tâche" style="max-width:180px;max-height:140px;border-radius:8px;object-fit:cover;border:1px solid var(--border)"></div>`:""}<div class="row" style="margin-top:8px">${t.status!=="done"?`<button type="button" onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}${canDelete?`<button type="button" class="danger" onclick="deleteTask('${t.id}')">Supprimer</button>`:""}</div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
 }
 function selectDay(ds){selectedDate=ds;renderCalendar()}
 function moveMonth(n){calDate.setMonth(calDate.getMonth()+n);renderCalendar()}
@@ -165,8 +185,8 @@ function addTask(){
       <label>2. Description de la tâche</label>
       <textarea id="newTaskText" rows="3" placeholder="Décrire la tâche à réaliser"></textarea>
 
-      <label>3. Nom de l'opérateur</label>
-      <input id="newTaskOperator" type="text" placeholder="Nom et prénom de l'opérateur">
+      <label>3. Nom de l'opérateur (facultatif)</label>
+      <input id="newTaskOperator" type="text" placeholder="Nom et prénom de l'opérateur (facultatif)">
 
       <label>4. Photo (facultative)</label>
       <input id="newTaskPhoto" type="file" accept="image/*" capture="environment">
@@ -189,9 +209,9 @@ async function saveTask(){
   const operator=document.getElementById("newTaskOperator")?.value.trim();
   const msg=document.getElementById("addTaskMsg");
 
-  if(!boat||!task||!operator){
+  if(!boat||!task){
     if(msg){
-      msg.textContent="Veuillez renseigner le bateau, la description de la tâche et le nom de l'opérateur.";
+      msg.textContent="Veuillez renseigner le bateau et la description de la tâche.";
       msg.className="small error";
     }
     return;
@@ -254,7 +274,7 @@ async function completeTask(id){
   await refresh();
   renderCalendar();
 
-  const subject=`CHECK VDP — Tâche réalisée — ${task.boat_name} — ${task.task_date}`;
+  const subject=`TECHNIQUE VDP — Tâche réalisée — ${task.boat_name} — ${task.task_date}`;
   const body=`Bonjour,
 
 La tâche suivante a été marquée comme réalisée :
@@ -266,18 +286,21 @@ Tâche : ${task.task}${task.photo_url?`
 Photo : ${task.photo_url}`:""}
 
 Cordialement,
-CHECK VDP`;
+TECHNIQUE VDP`;
 
   window.location.href=`mailto:a.zinzius@vedettesdeparis.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 async function deleteTask(id){
-  if(profile?.role!=="admin"){
-    alert("Seul un administrateur peut supprimer une tâche.");
+  if(!profile){
+    alert("Vous devez être connecté pour supprimer une tâche.");
     return;
   }
 
   if(!confirm("Supprimer cette tâche ?"))return;
+
+  const task=tasks.find(t=>String(t.id)===String(id));
+  if(!task)return;
 
   if(task.photo_url){
     try{
@@ -301,6 +324,22 @@ async function deleteTask(id){
   renderCalendar();
 }
 
+function renderFluids(){
+ const today=isoDate(new Date()); const recent=fluidLogs.slice(0,30); const totalByBoat={};
+ fluidLogs.forEach(x=>{const q=Number(x.quantity_added||0);if(q)totalByBoat[x.boat_name]=(totalByBoat[x.boat_name]||0)+q});
+ document.getElementById("page-fluids").innerHTML=`<div class="card"><h2>🛢️ Suivi journalier des niveaux et consommations</h2><p class="muted">Saisissez les contrôles de niveaux et les quantités ajoutées pour suivre la consommation d'huile et de liquide de refroidissement.</p></div>
+ <div class="card"><h3>＋ Nouveau relevé</h3><label>Date</label><input id="fluidDate" type="date" value="${today}"><label>Bateau</label><select id="fluidBoat"><option value="">— Choisir un bateau —</option>${boats.map(b=>`<option value="${esc(b.name)}">${esc(b.name)}</option>`).join("")}</select><label>Équipement</label><input id="fluidEquipment" placeholder="Ex. moteur bâbord, appareil à gouverner, GENSET 1"><label>Fluide</label><select id="fluidType"><option value="">— Choisir —</option><option>Huile moteur</option><option>Huile appareil à gouverner</option><option>Huile étambot / ligne d'arbre</option><option>Huile GENSET</option><option>Liquide de refroidissement moteur</option><option>Liquide de refroidissement GENSET</option><option>Autre</option></select><label>Quantité ajoutée (litres, facultatif)</label><input id="fluidQty" type="number" min="0" step="0.1" placeholder="0"><label>Niveau / observation</label><input id="fluidLevel" placeholder="Ex. niveau OK, appoint nécessaire..."><label>Opérateur (facultatif)</label><input id="fluidOperator" placeholder="Nom et prénom"><div id="fluidMsg" class="small" style="margin-top:8px"></div><button onclick="saveFluidLog()">✓ Enregistrer le relevé</button></div>
+ <div class="card"><h3>Consommation cumulée enregistrée</h3>${boats.map(b=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--border)"><span class="grow">⚓ ${esc(b.name)}</span><b>${(totalByBoat[b.name]||0).toFixed(1)} L</b></div>`).join("")}</div>
+ <div class="card"><h3>Derniers relevés</h3>${recent.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Bateau</th><th>Équipement</th><th>Fluide</th><th>Qté</th><th>Niveau / observation</th><th>Opérateur</th>${profile?.role==="admin"?"<th></th>":""}</tr></thead><tbody>${recent.map(x=>`<tr><td>${esc(x.log_date)}</td><td>${esc(x.boat_name)}</td><td>${esc(x.equipment)}</td><td>${esc(x.fluid_type)}</td><td>${x.quantity_added==null?"":esc(x.quantity_added)+" L"}</td><td>${esc(x.level_observation||"")}</td><td>${esc(x.operator_name||"")}</td>${profile?.role==="admin"?`<td><button class="danger" onclick="deleteFluidLog('${x.id}')">Supprimer</button></td>`:""}</tr>`).join("")}</tbody></table></div>`:"<p class='muted'>Aucun relevé enregistré.</p>"}</div>`;
+}
+async function saveFluidLog(){
+ const log_date=document.getElementById("fluidDate").value,boat_name=document.getElementById("fluidBoat").value,equipment=document.getElementById("fluidEquipment").value.trim(),fluid_type=document.getElementById("fluidType").value,quantity=document.getElementById("fluidQty").value,level=document.getElementById("fluidLevel").value.trim(),operator=document.getElementById("fluidOperator").value.trim(),msg=document.getElementById("fluidMsg");
+ if(!log_date||!boat_name||!equipment||!fluid_type){msg.textContent="Date, bateau, équipement et fluide sont obligatoires.";msg.className="small error";return}
+ const quantity_added=quantity===""?null:Number(quantity); if(quantity!==""&&(!Number.isFinite(quantity_added)||quantity_added<0)){msg.textContent="La quantité doit être un nombre positif.";msg.className="small error";return}
+ const {error}=await client.from("fluid_logs").insert({log_date,boat_name,equipment,fluid_type,quantity_added,level_observation:level,operator_name:operator||null}); if(error){msg.textContent=error.message;msg.className="small error";return} await refresh();renderFluids();
+}
+async function deleteFluidLog(id){if(profile?.role!=="admin")return;if(!confirm("Supprimer ce relevé ?"))return;const {error}=await client.from("fluid_logs").delete().eq("id",id);if(error){alert(error.message);return}await refresh();renderFluids()}
+
 function openChecklist(id){currentBoat=boats.find(b=>b.id===id);currentItems=items.filter(i=>i.boat_id===id);answers={};photos={};renderChecklist();showPage("checklist")}
 function renderChecklist(){
  const b=currentBoat; document.getElementById("page-checklist").innerHTML=`<div class="card"><div class="row"><button class="secondary" onclick="showPage('home')">← Retour</button><div class="grow"><h2 style="margin:0">🔧 Technique — ${esc(b.name)}</h2></div></div><label>Nom du technicien</label><input id="techName" placeholder="Nom et prénom"><label>Date</label><input id="techDate" type="date" value="${isoDate(new Date())}"></div>`+
@@ -317,10 +356,10 @@ function validateChecklist(){
  const bad=currentItems.filter(i=>answers[i.id].status==="anomaly"&&!String(answers[i.id].desc||"").trim());
  if(bad.length){alert("Une description est obligatoire pour chaque anomalie.");return}
  const anomalies=currentItems.filter(i=>answers[i.id].status==="anomaly");
- let body=`CHECK VDP — CHECKLIST TECHNIQUE\\n\\nBateau : ${currentBoat.name}\\nDate : ${date}\\nTechnicien : ${tech}\\n\\n`;
+ let body=`TECHNIQUE VDP — CHECKLIST TECHNIQUE\\n\\nBateau : ${currentBoat.name}\\nDate : ${date}\\nTechnicien : ${tech}\\n\\n`;
  if(!anomalies.length)body+="AUCUNE ANOMALIE CONSTATÉE.\\n";else{body+="ANOMALIES :\\n";anomalies.forEach((it,i)=>body+=`${i+1}. ${it.title}\\n   ${answers[it.id].desc}\\n`)}
  body+="\\nLes photos éventuelles doivent être jointes manuellement à l'e-mail.";
- const subject=encodeURIComponent(`CHECK VDP — ${currentBoat.name} — ${date}`);
+ const subject=encodeURIComponent(`TECHNIQUE VDP — ${currentBoat.name} — ${date}`);
  location.href=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
 }
 function renderAdmin(){
@@ -335,11 +374,11 @@ async function adminMove(id,dir){
  let list=items.filter(i=>i.boat_id===items.find(x=>x.id===id).boat_id).sort((a,b)=>a.position-b.position),idx=list.findIndex(x=>x.id===id),j=idx+dir;if(j<0||j>=list.length)return;
  let a=list[idx],b=list[j];await client.from("checklist_items").update({position:b.position}).eq("id",a.id);await client.from("checklist_items").update({position:a.position}).eq("id",b.id);await refresh();renderAdmin()
 }
-async function refresh(){await loadData();renderHome();renderAdmin()}
-document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="admin")renderAdmin()});
+async function refresh(){await loadData();renderHome();renderAdmin();if(!document.getElementById("page-fluids").classList.contains("hidden"))renderFluids()}
+document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="fluids")renderFluids();if(b.dataset.page==="admin")renderAdmin()});
 document.getElementById("loginBtn").onclick=async()=>{let e=loginEmail.value.trim(),p=loginPassword.value;setMsg("loginMsg","Connexion…");let r=await client.auth.signInWithPassword({email:e,password:p});if(r.error)setMsg("loginMsg",r.error.message,true);else startApp()};
 document.getElementById("logoutBtn").onclick=async()=>{await client.auth.signOut();location.reload()};
-async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
+async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderFluids();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
 client.auth.onAuthStateChange((_event,session)=>{if(session&&!profile)startApp()});
 (async()=>{const {data:{session}}=await client.auth.getSession();if(session)startApp()})();
 </script>

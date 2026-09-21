@@ -205,7 +205,7 @@ function levelSpec(boatName,title){
 function levelInputs(it,a){
   const specs=levelSpec(currentBoat.name,it.title);
   if(a.status!=="anomaly" || !specs.length) return "";
-  return `<div class="levelbox"><b>🛢️ Appoint de niveau</b><div class="small">Quantité réellement ajoutée, en litres.</div><div class="levelgrid">${specs.map(s=>`<div><label>${esc(s.label)} — litres</label><input type="number" min="0" step="0.1" inputmode="decimal" id="qty-${it.id}-${s.key}" value="${a.levels?.[s.key]??""}" placeholder="0"></div>`).join("")}</div></div>`;
+  return `<div class="levelbox"><b>🛢️ Appoint de niveau</b><div class="small">Quantité réellement ajoutée, en litres.</div><div class="levelgrid">${specs.map(s=>`<div><label>${esc(s.label)} — litres</label><input type="number" min="0" step="0.1" inputmode="decimal" id="qty-${it.id}-${s.key}" value="${a.levels?.[s.key]??""}" placeholder="0" oninput="setLevelQty('${it.id}','${s.key}',this.value)"></div>`).join("")}</div></div>`;
 }
 async function saveChecklistLevels(tech,date){
   const rows=[];
@@ -270,8 +270,9 @@ function renderChecklist(){
  `<div class="card"><button style="width:100%" onclick="validateChecklist()">✓ Valider et préparer l'e-mail</button><p class="small">Le résultat n'est pas enregistré comme fiche serveur. L'e-mail s'ouvre dans l'application de messagerie de l'appareil et doit être envoyé manuellement.</p></div>`;
 }
 function answer(id,status){answers[id]=answers[id]||{};answers[id].status=status;renderChecklist()}
+function setLevelQty(id,key,value){answers[id]=answers[id]||{};answers[id].levels=answers[id].levels||{};answers[id].levels[key]=value}
 function addPhotos(id,files){answers[id]=answers[id]||{};answers[id].photos=answers[id].photos||[];answers[id].photoFiles=answers[id].photoFiles||[];[...files].forEach(f=>{answers[id].photoFiles.push(f);let r=new FileReader();r.onload=()=>{answers[id].photos.push(r.result);renderChecklist()};r.readAsDataURL(f)})}
-function validateChecklist(){
+async function validateChecklist(){
  const tech=document.getElementById("techName").value.trim(),date=document.getElementById("techDate").value;
  if(!tech||!date){alert("Nom du technicien et date obligatoires.");return}
  const missing=currentItems.filter(i=>!answers[i.id]?.status);
@@ -279,7 +280,11 @@ function validateChecklist(){
  const bad=currentItems.filter(i=>answers[i.id].status==="anomaly"&&!String(answers[i.id].desc||"").trim());
  if(bad.length){alert("Une description est obligatoire pour chaque anomalie.");return}
  const anomalies=currentItems.filter(i=>answers[i.id].status==="anomaly");
- saveChecklistLevels(tech,date).then(async()=>{
+ const button=document.querySelector('#page-checklist button[onclick="validateChecklist()"]');
+ button?.setAttribute('disabled','disabled');
+ if(button)button.textContent='⏳ Validation en cours…';
+ try {
+  await saveChecklistLevels(tech,date);
   const photoLinks=[];
   for(const it of anomalies){
    const files=answers[it.id].photoFiles||[];
@@ -294,9 +299,24 @@ function validateChecklist(){
   let body=`CHECK VDP — CHECKLIST TECHNIQUE\n\nBateau : ${currentBoat.name}\nDate : ${date}\nTechnicien : ${tech}\n\n`;
   if(!anomalies.length)body+="AUCUNE ANOMALIE CONSTATÉE.\n";else{body+="ANOMALIES :\n";anomalies.forEach((it,i)=>body+=`${i+1}. ${it.title}\n   ${answers[it.id].desc}\n`)}
   if(photoLinks.length){body+="\nPHOTOS :\n";photoLinks.forEach((x,i)=>body+=`${i+1}. ${x.title} — ${x.url}\n`)}else body+="\nAucune photo jointe.\n";
+  const submission={
+   boat_name:currentBoat.name,
+   checklist_date:date,
+   operator_name:tech,
+   result: {
+    items: currentItems.map(it=>({id:it.id,title:it.title,status:answers[it.id]?.status||null,description:answers[it.id]?.desc||'',level_quantities:answers[it.id]?.levels||{}})),
+    photo_links: photoLinks.map(x=>({title:x.title,url:x.url}))
+   }
+  };
+  const saved=await client.from('checklist_submissions').insert(submission);
+  if(saved.error)throw new Error('Enregistrement de la checklist : '+saved.error.message);
   const subject=encodeURIComponent(`CHECK VDP — ${currentBoat.name} — ${date}`);
   location.href=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
- }).catch(e=>alert("La checklist est prête, mais l’enregistrement des appoints/photos a échoué : "+e.message));
+  alert('✓ Checklist validée et enregistrée. L’e-mail va s’ouvrir.');
+ } catch(e) {
+  alert('La validation a échoué : '+e.message);
+  if(button){button.removeAttribute('disabled');button.textContent='✓ Valider et préparer l’e-mail'}
+ }
 }
 function renderAdmin(){
  if(profile?.role!=="admin")return;

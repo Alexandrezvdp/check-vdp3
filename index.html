@@ -142,19 +142,51 @@ function renderCalendar(){
 function renderDayPanel(){
  const ts=tasks.filter(t=>t.task_date===selectedDate);
  const canAdmin=profile?.role==="admin";
- document.getElementById("dayPanel").innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0;text-transform:capitalize">${fmt(selectedDate)}</h2><div class="small">${ts.length} tâche(s)</div></div>${canAdmin?'<button onclick="addTask()">＋ Ajouter une tâche</button>':""}</div>`+
- (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px">${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}${canAdmin?`<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button>`:""}</div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
+ document.getElementById("dayPanel").innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0;text-transform:capitalize">${fmt(selectedDate)}</h2><div class="small">${ts.length} tâche(s)</div></div><button onclick="showAddTaskForm()">＋ Ajouter une tâche</button></div>`+
+ (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px">${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button></div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
 }
 function selectDay(ds){selectedDate=ds;renderCalendar()}
 function moveMonth(n){calDate.setMonth(calDate.getMonth()+n);renderCalendar()}
-async function addTask(){
- const boat=prompt("Bateau :\\n"+BOATS.join("\\n")); if(!boat||!BOATS.includes(boat))return;
- const operator=prompt("Opérateur :"); if(!operator)return;
- const task=prompt("Tâche :"); if(!task)return;
- const {error}=await client.from("tasks").insert({task_date:selectedDate,boat_name:boat,operator_name:operator,task,status:"todo"});
- if(error)alert(error.message);else{await refresh();renderCalendar()}
+function showAddTaskForm(){
+ const panel=document.getElementById("dayPanel");
+ const existing=document.getElementById("addTaskForm");
+ if(existing){existing.remove();return}
+ const form=document.createElement("div");
+ form.id="addTaskForm";
+ form.className="card";
+ form.innerHTML=`<h3 style="margin-top:0">＋ Nouvelle tâche</h3>
+ <div class="grid">
+  <div><label>Date</label><input id="newTaskDate" type="date" value="${esc(selectedDate)}"></div>
+  <div><label>Bateau</label><select id="newTaskBoat">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div>
+  <div><label>Opérateur</label><input id="newTaskOperator" placeholder="Nom de l'opérateur"></div>
+  <div style="grid-column:1/-1"><label>Tâche</label><textarea id="newTaskText" rows="3" placeholder="Décrire la tâche"></textarea></div>
+ </div>
+ <div class="row" style="margin-top:10px"><button onclick="saveNewTask()">Enregistrer</button><button class="secondary" onclick="document.getElementById('addTaskForm').remove()">Annuler</button></div>
+ <div id="addTaskMsg" class="small" style="margin-top:8px"></div>`;
+ panel.prepend(form);
 }
-async function deleteTask(id){if(!confirm("Supprimer cette tâche ?"))return;let r=await client.from("tasks").delete().eq("id",id);if(r.error)alert(r.error.message);else{await refresh();renderCalendar()}}
+async function saveNewTask(){
+ const date=document.getElementById("newTaskDate").value;
+ const boat=document.getElementById("newTaskBoat").value;
+ const operator=document.getElementById("newTaskOperator").value.trim();
+ const task=document.getElementById("newTaskText").value.trim();
+ if(!date||!boat||!operator||!task){setMsg("addTaskMsg","Tous les champs sont obligatoires.",true);return}
+ const button=document.querySelector('#addTaskForm button:not(.secondary)');
+ button?.setAttribute('disabled','disabled');
+ const {error}=await client.from("tasks").insert({task_date:date,boat_name:boat,operator_name:operator,task,status:"todo"});
+ if(error){setMsg("addTaskMsg","Impossible d'ajouter la tâche : "+error.message,true);button?.removeAttribute('disabled');return}
+ selectedDate=date;
+ await refresh();
+ renderCalendar();
+ alert("✓ Tâche ajoutée au planning.");
+}
+async function deleteTask(id){
+ if(!confirm("Supprimer cette tâche ?"))return;
+ const r=await client.from("tasks").delete().eq("id",id);
+ if(r.error){alert("Impossible de supprimer la tâche : "+r.error.message);return}
+ await refresh();
+ renderCalendar();
+}
 async function completeTask(id){
  const t=tasks.find(x=>x.id===id); if(!t)return;
  const {error}=await client.from("tasks").update({status:"done",completed_at:new Date().toISOString(),completed_by:profile?.id||null}).eq("id",id);
@@ -245,7 +277,7 @@ function renderLevels(){
   <div><label>Bâbord / Tribord / N°</label><select id="manualSide"><option value="">—</option><option>Bâbord</option><option>Tribord</option><option>1</option><option>2</option></select></div>
   <div><label>Quantité (litres)</label><input id="manualQty" type="number" min="0" step="0.1" inputmode="decimal"></div>
   <div><label>Observation</label><input id="manualObs" placeholder="Facultatif"></div></div><div style="margin-top:10px"><button onclick="addManualLevel()">Enregistrer l’appoint</button></div></div>`;
-  const hist=`<div class="card"><h2>Historique des appoints</h2>${levelRecords.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Bateau</th><th>Équipement</th><th>Fluide</th><th>Côté/N°</th><th>Qté</th><th>Origine</th><th>Opérateur</th></tr></thead><tbody>${levelRecords.map(x=>`<tr><td>${esc(x.checklist_date||String(x.created_at||"").slice(0,10))}</td><td>${esc(x.boat_name)}</td><td>${esc(x.equipment)}</td><td>${esc(x.fluid)}</td><td>${esc(x.side||"—")}</td><td>${Number(x.quantity_liters||0).toFixed(1)} L</td><td>${x.source==="checklist"?"Checklist":"Manuel"}</td><td>${esc(x.operator_name||"")}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Aucun appoint enregistré.</p>`}</div>`;
+  const hist=`<div class="card"><h2>Historique des appoints</h2>${levelRecords.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Bateau</th><th>Équipement</th><th>Fluide</th><th>Côté/N°</th><th>Qté</th><th>Origine</th><th>Opérateur</th><th></th></tr></thead><tbody>${levelRecords.map(x=>`<tr><td>${esc(x.checklist_date||String(x.created_at||"").slice(0,10))}</td><td>${esc(x.boat_name)}</td><td>${esc(x.equipment)}</td><td>${esc(x.fluid)}</td><td>${esc(x.side||"—")}</td><td>${Number(x.quantity_liters||0).toFixed(1)} L</td><td>${x.source==="checklist"?"Checklist":"Manuel"}</td><td>${esc(x.operator_name||"")}</td><td><button class="danger" onclick="deleteLevelRecord('${x.id}')">Supprimer</button></td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Aucun appoint enregistré.</p>`}</div>`;
   document.getElementById("page-levels").innerHTML=`<div class="card"><h2>🛢️ Suivi niveaux</h2><p class="muted">Cumuls séparés par bateau, équipement, fluide et côté/numéro.</p></div>`+cards+manual+hist;
   updateManualEquipment();
 }
@@ -253,6 +285,13 @@ function updateManualEquipment(){
   const b=document.getElementById("manualBoat"),e=document.getElementById("manualEquipment"); if(!b||!e)return;
   const opts=b.value==="Paris Etoile"?["Ligne d’arbre","Appareil à gouverner","GENSET"]:["Appareil à gouverner","Étambot ligne d’arbre","Moteur"];
   e.innerHTML=opts.map(x=>`<option>${x}</option>`).join("");
+}
+async function deleteLevelRecord(id){
+ if(!confirm("Supprimer cet appoint ? Le cumul sera recalculé sans cette ligne."))return;
+ const {error}=await client.from("level_records").delete().eq("id",id);
+ if(error){alert("Impossible de supprimer l'appoint : "+error.message);return}
+ await loadData();
+ renderLevels();
 }
 async function addManualLevel(){
   const boat=document.getElementById("manualBoat").value,equipment=document.getElementById("manualEquipment").value,fluid=document.getElementById("manualFluid").value,side=document.getElementById("manualSide").value,qty=parseFloat(document.getElementById("manualQty").value),obs=document.getElementById("manualObs").value.trim();

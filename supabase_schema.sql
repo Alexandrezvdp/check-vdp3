@@ -135,11 +135,11 @@ create table if not exists public.fluid_logs (
   level_observation text,
   operator_name text,
   created_at timestamptz not null default now(),
-  created_by uuid references auth.users(id)
+  created_by uuid references auth.users(id),
+  source text not null default 'Manuel' check (source in ('Checklist','Manuel'))
 );
 
-alter table public.fluid_logs add column if not exists source text not null default 'manual';
-alter table public.fluid_logs add column if not exists checklist_item_id uuid references public.checklist_items(id);
+alter table public.fluid_logs add column if not exists source text not null default 'Manuel';
 
 -- Fonction utilisée par les politiques RLS pour reconnaître un administrateur.
 create or replace function public.is_admin()
@@ -244,11 +244,11 @@ drop policy if exists task_photos_insert on storage.objects;
 create policy task_photos_insert
 on storage.objects for insert
 to authenticated
-with check (bucket_id = 'task-photos' and public.is_admin());
+with check (bucket_id = 'task-photos');
 
 drop policy if exists task_photos_delete on storage.objects;
 drop policy if exists task_photos_delete_authenticated on storage.objects;
 create policy task_photos_delete
 on storage.objects for delete
 to authenticated
-using (bucket_id = 'task-photos' and public.is_admin());
+using (bucket_id = 'task-photos');

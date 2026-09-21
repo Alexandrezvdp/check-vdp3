@@ -128,6 +128,26 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&l
 function fmt(d){return new Date(d+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
 function showPage(p){document.querySelectorAll("main>section").forEach(x=>x.classList.add("hidden"));document.getElementById("page-"+p).classList.remove("hidden");document.querySelectorAll("nav button[data-page]").forEach(x=>x.classList.toggle("active",x.dataset.page===p))}
 function setMsg(id,msg,error=false){let e=document.getElementById(id);if(e){e.textContent=msg;e.className="small"+(error?" error":"")}}
+
+function levelInfo(title){
+ const t=String(title||"").toLowerCase();
+ if(t.includes("niveau huile")){
+   let equipment="Autre";
+   if(t.includes("appareil à gouverner")) equipment="Appareil à gouverner";
+   else if(t.includes("étambot")) equipment="Étambot / lignes d'arbres";
+   else if(t.includes("genset")) equipment="GENSET 1&2";
+   else if(t.includes("moteur")) equipment="Moteurs";
+   return {fluid_type:"Huile",equipment};
+ }
+ if(t.includes("niveau liquide de refroidissement")){
+   let equipment="Autre";
+   if(t.includes("genset")) equipment="GENSET 1&2";
+   else if(t.includes("ligne d'arbre")) equipment="Ligne d'arbre";
+   else if(t.includes("moteur")) equipment="Moteurs";
+   return {fluid_type:"Liquide de refroidissement",equipment};
+ }
+ return null;
+}
 async function loadProfile(){
  const {data:{user}}=await client.auth.getUser(); if(!user){profile=null;return}
  const {data,error}=await client.from("profiles").select("*").eq("id",user.id).single();
@@ -283,8 +303,7 @@ Date : ${task.task_date}
 Bateau : ${task.boat_name}
 Opérateur : ${task.operator_name}
 Tâche : ${task.task}${task.photo_url?`
-📷 Voir la photo :
-${task.photo_url}`:""}
+Photo : ${task.photo_url}`:""}
 
 Cordialement,
 TECHNIQUE VDP`;
@@ -326,39 +345,119 @@ async function deleteTask(id){
 }
 
 function renderFluids(){
- const today=isoDate(new Date()); const totalByBoat={};
- fluidLogs.forEach(x=>{const q=Number(x.quantity_added||0);if(q)totalByBoat[x.boat_name]=(totalByBoat[x.boat_name]||0)+q});
- const boatsOptions=boats.map(b=>`<option value="${esc(b.name)}">${esc(b.name)}</option>`).join("");
- const recent=fluidLogs.slice(0,80); const grouped={};
- fluidLogs.forEach(x=>{const k=`${x.boat_name}|||${x.equipment}|||${x.fluid_type}`;(grouped[k]??=[]).push(x)});
- const history=Object.entries(grouped).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,rows])=>{const [boat,equip,fluid]=k.split("|||");const total=rows.reduce((s,x)=>s+Number(x.quantity_added||0),0);return `<div class="item"><div class="row"><div class="grow"><b>⚓ ${esc(boat)}</b><div class="small">${esc(equip)} · ${esc(fluid)}</div></div><b>${total.toFixed(1)} L cumulés</b></div><div style="overflow:auto;margin-top:8px"><table><thead><tr><th>Date</th><th>Qté</th><th>Origine</th><th>Observation</th><th>Opérateur</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.log_date)}</td><td>${x.quantity_added==null?"":esc(x.quantity_added)+" L"}</td><td>${x.source==="checklist"?"Checklist":"Ajout manuel"}</td><td>${esc(x.level_observation||"")}</td><td>${esc(x.operator_name||"")}</td></tr>`).join("")}</tbody></table></div></div>`}).join("");
- document.getElementById("page-fluids").innerHTML=`<div class="card"><h2>🛢️ Suivi des niveaux et appoints</h2><p class="muted">Une anomalie de niveau saisie dans la checklist crée automatiquement un relevé ici. Vous pouvez aussi enregistrer un appoint manuel, même s'il n'existe pas dans la checklist. L'historique est conservé par bateau, équipement et fluide.</p></div>
- <div class="card"><h3>＋ Ajouter un appoint / relevé manuel</h3><label>Date</label><input id="fluidDate" type="date" value="${today}"><label>Bateau</label><select id="fluidBoat"><option value="">— Choisir un bateau —</option>${boatsOptions}</select><label>Équipement</label><input id="fluidEquipment" placeholder="Ex. moteur bâbord, appareil à gouverner, GENSET 1"><label>Fluide</label><select id="fluidType"><option value="">— Choisir —</option><option>Huile</option><option>Huile appareil à gouverner</option><option>Huile étambot / ligne d'arbre</option><option>Huile GENSET</option><option>Liquide de refroidissement</option><option>Liquide de refroidissement moteur</option><option>Liquide de refroidissement GENSET</option><option>Autre</option></select><label>Quantité ajoutée (litres, facultatif)</label><input id="fluidQty" type="number" min="0" step="0.1" placeholder="0"><label>Niveau / observation</label><input id="fluidLevel" placeholder="Ex. appoint effectué, niveau OK..."><label>Opérateur (facultatif)</label><input id="fluidOperator" placeholder="Nom et prénom"><div id="fluidMsg" class="small" style="margin-top:8px"></div><button onclick="saveFluidLog()">✓ Enregistrer l'appoint</button></div>
- <div class="card"><h3>Consommation cumulée par bateau</h3>${boats.map(b=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--border)"><span class="grow">⚓ ${esc(b.name)}</span><b>${(totalByBoat[b.name]||0).toFixed(1)} L</b></div>`).join("")}</div>
- <div class="card"><h3>Historique par équipement et bateau</h3>${history||"<p class='muted'>Aucun appoint enregistré.</p>"}</div>
- <div class="card"><h3>Derniers relevés</h3>${recent.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Bateau</th><th>Équipement</th><th>Fluide</th><th>Qté</th><th>Origine</th><th>Observation</th><th>Opérateur</th>${profile?.role==="admin"?"<th></th>":""}</tr></thead><tbody>${recent.map(x=>`<tr><td>${esc(x.log_date)}</td><td>${esc(x.boat_name)}</td><td>${esc(x.equipment)}</td><td>${esc(x.fluid_type)}</td><td>${x.quantity_added==null?"":esc(x.quantity_added)+" L"}</td><td>${x.source==="checklist"?"Checklist":"Manuel"}</td><td>${esc(x.level_observation||"")}</td><td>${esc(x.operator_name||"")}</td>${profile?.role==="admin"?`<td><button class="danger" onclick="deleteFluidLog('${x.id}')">Supprimer</button></td>`:""}</tr>`).join("")}</tbody></table></div>`:"<p class='muted'>Aucun relevé enregistré.</p>"}</div>`;
+ const today=isoDate(new Date());
+ const recent=fluidLogs.slice(0,50);
+ const totalByBoat={};
+ const groups={};
+ fluidLogs.forEach(x=>{
+   const q=Number(x.quantity_added||0);
+   if(q) totalByBoat[x.boat_name]=(totalByBoat[x.boat_name]||0)+q;
+   const key=`${x.boat_name}|||${x.equipment}|||${x.fluid_type}`;
+   if(!groups[key]) groups[key]={boat_name:x.boat_name,equipment:x.equipment,fluid_type:x.fluid_type,total:0,count:0};
+   if(q){groups[key].total+=q;groups[key].count++;}
+ });
+ const groupRows=Object.values(groups).sort((a,b)=>
+   `${a.boat_name}${a.equipment}${a.fluid_type}`.localeCompare(`${b.boat_name}${b.equipment}${b.fluid_type}`,"fr")
+ );
+ document.getElementById("page-fluids").innerHTML=`
+ <div class="card"><h2>🛢️ Suivi des niveaux et appoints</h2>
+ <p class="muted">Les anomalies de niveau saisies dans les check-lists alimentent automatiquement cet historique. Vous pouvez aussi enregistrer un appoint manuel.</p></div>
+ <div class="card"><h3>＋ Ajouter un appoint manuel</h3>
+ <label>Date</label><input id="fluidDate" type="date" value="${today}">
+ <label>Bateau</label><select id="fluidBoat"><option value="">— Choisir un bateau —</option>${boats.map(b=>`<option value="${esc(b.name)}">${esc(b.name)}</option>`).join("")}</select>
+ <label>Équipement</label><input id="fluidEquipment" placeholder="Ex. moteur bâbord, appareil à gouverner, GENSET 1">
+ <label>Fluide</label><select id="fluidType"><option value="">— Choisir —</option><option>Huile</option><option>Liquide de refroidissement</option><option>Autre</option></select>
+ <label>Quantité ajoutée (litres)</label><input id="fluidQty" type="number" min="0" step="0.1" placeholder="Ex. 2,5">
+ <label>Niveau / observation</label><input id="fluidLevel" placeholder="Ex. appoint manuel">
+ <label>Opérateur (facultatif)</label><input id="fluidOperator" placeholder="Nom et prénom">
+ <div id="fluidMsg" class="small" style="margin-top:8px"></div><button onclick="saveFluidLog()">✓ Enregistrer l'appoint</button></div>
+ <div class="card"><h3>Cumul des appoints par bateau</h3>
+ ${boats.map(b=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--border)"><span class="grow">⚓ ${esc(b.name)}</span><b>${(totalByBoat[b.name]||0).toFixed(1)} L</b></div>`).join("")}</div>
+ <div class="card"><h3>Historique par équipement</h3>
+ ${groupRows.length?`<div style="overflow:auto"><table><thead><tr><th>Bateau</th><th>Équipement</th><th>Fluide</th><th>Cumul</th><th>Appoints</th></tr></thead><tbody>
+ ${groupRows.map(g=>`<tr><td>${esc(g.boat_name)}</td><td>${esc(g.equipment)}</td><td>${esc(g.fluid_type)}</td><td><b>${g.total.toFixed(1)} L</b></td><td>${g.count}</td></tr>`).join("")}
+ </tbody></table></div>`:"<p class='muted'>Aucun appoint enregistré.</p>"}</div>
+ <div class="card"><h3>Derniers appoints</h3>
+ ${recent.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Origine</th><th>Bateau</th><th>Équipement</th><th>Fluide</th><th>Qté</th><th>Observation</th><th>Opérateur</th>${profile?.role==="admin"?"<th></th>":""}</tr></thead><tbody>
+ ${recent.map(x=>`<tr><td>${esc(x.log_date)}</td><td>${esc(x.source||"Manuel")}</td><td>${esc(x.boat_name)}</td><td>${esc(x.equipment)}</td><td>${esc(x.fluid_type)}</td><td>${x.quantity_added==null?"":esc(x.quantity_added)+" L"}</td><td>${esc(x.level_observation||"")}</td><td>${esc(x.operator_name||"")}</td>${profile?.role==="admin"?`<td><button class="danger" onclick="deleteFluidLog('${x.id}')">Supprimer</button></td>`:""}</tr>`).join("")}
+ </tbody></table></div>`:"<p class='muted'>Aucun appoint enregistré.</p>"}</div>`;
 }
 async function saveFluidLog(){
- const log_date=document.getElementById("fluidDate").value,boat_name=document.getElementById("fluidBoat").value,equipment=document.getElementById("fluidEquipment").value.trim(),fluid_type=document.getElementById("fluidType").value,quantity=document.getElementById("fluidQty").value,level=document.getElementById("fluidLevel").value.trim(),operator=document.getElementById("fluidOperator").value.trim(),msg=document.getElementById("fluidMsg");
- if(!log_date||!boat_name||!equipment||!fluid_type){msg.textContent="Date, bateau, équipement et fluide sont obligatoires.";msg.className="small error";return}
- const quantity_added=quantity===""?null:Number(quantity); if(quantity!==""&&(!Number.isFinite(quantity_added)||quantity_added<0)){msg.textContent="La quantité doit être un nombre positif.";msg.className="small error";return}
- const {error}=await client.from("fluid_logs").insert({log_date,boat_name,equipment,fluid_type,quantity_added,level_observation:level,operator_name:operator||null,source:"manual"}); if(error){msg.textContent=error.message;msg.className="small error";return} await refresh();renderFluids();
-}
-async function saveChecklistFluidLogs(date,tech){
- const rows=[];
- for(const it of currentItems){const a=answers[it.id];if(!a||a.status!=="anomaly"||!isLevelCheck(it))continue;const q=(a.quantity_added===""||a.quantity_added==null)?null:Number(a.quantity_added);if(a.quantity_added!=null&&a.quantity_added!==""&&(!Number.isFinite(q)||q<0))throw new Error(`Quantité invalide pour « ${it.title} »`);rows.push({log_date:date,boat_name:currentBoat.name,equipment:equipmentForItem(it.title),fluid_type:fluidTypeForItem(it.title),quantity_added:q,level_observation:a.desc||"Anomalie de niveau",operator_name:tech,source:"checklist",checklist_item_id:it.id});}
- if(!rows.length)return; const {error}=await client.from("fluid_logs").insert(rows);if(error)throw error;
+ const log_date=document.getElementById("fluidDate").value;
+ const boat_name=document.getElementById("fluidBoat").value;
+ const equipment=document.getElementById("fluidEquipment").value.trim();
+ const fluid_type=document.getElementById("fluidType").value;
+ const quantity=document.getElementById("fluidQty").value;
+ const level=document.getElementById("fluidLevel").value.trim();
+ const operator=document.getElementById("fluidOperator").value.trim();
+ const msg=document.getElementById("fluidMsg");
+ if(!log_date||!boat_name||!equipment||!fluid_type||quantity===""){
+   msg.textContent="Date, bateau, équipement, fluide et quantité sont obligatoires.";
+   msg.className="small error"; return;
+ }
+ const quantity_added=Number(quantity);
+ if(!Number.isFinite(quantity_added)||quantity_added<0){
+   msg.textContent="La quantité doit être un nombre positif.";
+   msg.className="small error"; return;
+ }
+ const {error}=await client.from("fluid_logs").insert({
+   log_date,boat_name,equipment,fluid_type,quantity_added,
+   level_observation:level||"Appoint manuel",
+   operator_name:operator||null,
+   source:"Manuel",
+   created_by:profile?.id||null
+ });
+ if(error){msg.textContent=error.message;msg.className="small error";return}
+ await refresh(); renderFluids();
 }
 async function deleteFluidLog(id){if(profile?.role!=="admin")return;if(!confirm("Supprimer ce relevé ?"))return;const {error}=await client.from("fluid_logs").delete().eq("id",id);if(error){alert(error.message);return}await refresh();renderFluids()}
 
-function openChecklist(id){currentBoat=boats.find(b=>b.id===id);currentItems=items.filter(i=>i.boat_id===id);answers={};photos={};renderChecklist();showPage("checklist")}
-function renderChecklist(){
- const b=currentBoat; document.getElementById("page-checklist").innerHTML=`<div class="card"><div class="row"><button class="secondary" onclick="showPage('home')">← Retour</button><div class="grow"><h2 style="margin:0">🔧 Technique — ${esc(b.name)}</h2></div></div><label>Nom du technicien</label><input id="techName" placeholder="Nom et prénom"><label>Date</label><input id="techDate" type="date" value="${isoDate(new Date())}"></div>`+
- currentItems.map((it,n)=>{let a=answers[it.id]||{};const levelBlock=isLevelCheck(it)&&a.status==="anomaly"?`<label>Quantité rajoutée (litres, facultatif)</label><input id="qty-${it.id}" type="number" min="0" step="0.1" value="${a.quantity_added??""}" oninput="answers['${it.id}'].quantity_added=this.value" placeholder="Ex. 0,5">`:"";return `<div class="item"><div class="item-title">${n+1}. ${esc(it.title)}</div><div class="choices"><button class="${a.status==="ok"?"sel-ok":""}" onclick="answer('${it.id}','ok')">✓ Conforme</button><button class="${a.status==="anomaly"?"sel-anom":""}" onclick="answer('${it.id}','anomaly')">⚠ Anomalie</button><button class="${a.status==="na"?"sel-na":""}" onclick="answer('${it.id}','na')">— N/A</button></div>${a.status==="anomaly"?`<div class="anomaly">${levelBlock}<label>Description obligatoire</label><textarea id="desc-${it.id}" oninput="answers['${it.id}'].desc=this.value" placeholder="Décrire l'anomalie">${esc(a.desc||"")}</textarea><label>Photo(s)</label><input type="file" accept="image/*" capture="environment" multiple onchange="addPhotos('${it.id}',this.files)"><div class="photos">${(a.photos||[]).map(p=>`<img src="${p}">`).join("")}</div></div>`:""}</div>`}).join("")+
- `<div class="card"><button style="width:100%" onclick="validateChecklist()">✓ Valider et préparer l'e-mail</button><p class="small">Le résultat n'est pas enregistré comme fiche serveur. L'e-mail s'ouvre dans l'application de messagerie de l'appareil et doit être envoyé manuellement.</p></div>`;
+function openChecklist(id){
+ currentBoat=boats.find(b=>b.id===id);
+ currentItems=items.filter(i=>i.boat_id===id).sort((a,b)=>a.position-b.position);
+ answers={}; photos={}; renderChecklist(); showPage("checklist");
 }
-function answer(id,status){answers[id]=answers[id]||{};answers[id].status=status;renderChecklist()}
-function addPhotos(id,files){answers[id]=answers[id]||{};answers[id].photos=answers[id].photos||[];[...files].forEach(f=>{let r=new FileReader();r.onload=()=>{answers[id].photos.push(r.result);renderChecklist()};r.readAsDataURL(f)})}
+function renderChecklist(){
+ const b=currentBoat;
+ const tech=document.getElementById("techName")?.value||"";
+ const date=document.getElementById("techDate")?.value||isoDate(new Date());
+ document.getElementById("page-checklist").innerHTML=
+ `<div class="card"><div class="row"><button class="secondary" onclick="showPage('home')">← Retour</button><div class="grow"><h2 style="margin:0">🔧 Technique — ${esc(b.name)}</h2></div></div>
+ <label>Nom du technicien</label><input id="techName" value="${esc(tech)}" placeholder="Nom et prénom">
+ <label>Date</label><input id="techDate" type="date" value="${esc(date)}"></div>`+
+ currentItems.map((it,n)=>{
+   let a=answers[it.id]||{};
+   const li=levelInfo(it.title);
+   return `<div class="item"><div class="item-title">${n+1}. ${esc(it.title)}</div>
+   <div class="choices">
+   <button class="${a.status==="ok"?"sel-ok":""}" onclick="answer('${it.id}','ok')">✓ Conforme</button>
+   <button class="${a.status==="anomaly"?"sel-anom":""}" onclick="answer('${it.id}','anomaly')">⚠ Anomalie</button>
+   <button class="${a.status==="na"?"sel-na":""}" onclick="answer('${it.id}','na')">— N/A</button></div>
+   ${a.status==="anomaly"?`<div class="anomaly">
+   <label>Description obligatoire</label>
+   <textarea id="desc-${it.id}" oninput="answers['${it.id}'].desc=this.value" placeholder="Décrire l'anomalie">${esc(a.desc||"")}</textarea>
+   ${li?`<label>Quantité rajoutée (litres) <span class="small">— ${esc(li.fluid_type)} · ${esc(li.equipment)}</span></label>
+   <input id="qty-${it.id}" type="number" min="0" step="0.1" value="${a.quantity_added??""}" oninput="answers['${it.id}'].quantity_added=this.value" placeholder="Ex. 2,5">`:""}
+   <label>Photo(s)</label><input type="file" accept="image/*" capture="environment" multiple onchange="addPhotos('${it.id}',this.files)">
+   <div class="photos">${(a.photos||[]).map(p=>`<img src="${p}">`).join("")}</div>
+   </div>`:""}</div>`
+ }).join("")+
+ `<div class="card"><button style="width:100%" onclick="validateChecklist()">✓ Valider et préparer l'e-mail</button>
+ <p class="small">Les anomalies de niveau avec une quantité ajoutée sont automatiquement enregistrées dans 🛢️ Suivi niveaux.</p></div>`;
+}
+function answer(id,status){
+ const tech=document.getElementById("techName")?.value||"";
+ const date=document.getElementById("techDate")?.value||isoDate(new Date());
+ answers[id]=answers[id]||{};
+ answers[id].status=status;
+ renderChecklist();
+ document.getElementById("techName").value=tech;
+ document.getElementById("techDate").value=date;
+}
+function addPhotos(id,files){
+ answers[id]=answers[id]||{};answers[id].photos=answers[id].photos||[];
+ [...files].forEach(f=>{let r=new FileReader();r.onload=()=>{answers[id].photos.push(r.result);renderChecklist()};r.readAsDataURL(f)})
+}
 async function validateChecklist(){
  const tech=document.getElementById("techName").value.trim(),date=document.getElementById("techDate").value;
  if(!tech||!date){alert("Nom du technicien et date obligatoires.");return}
@@ -366,11 +465,44 @@ async function validateChecklist(){
  if(missing.length){alert("Tous les points doivent être renseignés.");return}
  const bad=currentItems.filter(i=>answers[i.id].status==="anomaly"&&!String(answers[i.id].desc||"").trim());
  if(bad.length){alert("Une description est obligatoire pour chaque anomalie.");return}
- try{await saveChecklistFluidLogs(date,tech)}catch(e){alert("Impossible d'enregistrer le suivi des niveaux : "+e.message);return}
+ const levelAnomalies=currentItems.filter(i=>answers[i.id].status==="anomaly"&&levelInfo(i.title));
+ const missingQty=levelAnomalies.filter(i=>answers[i.id].quantity_added===""||answers[i.id].quantity_added==null||!Number.isFinite(Number(answers[i.id].quantity_added))||Number(answers[i.id].quantity_added)<0);
+ if(missingQty.length){
+   alert("Pour chaque anomalie de niveau, indiquez la quantité rajoutée en litres.");
+   return;
+ }
  const anomalies=currentItems.filter(i=>answers[i.id].status==="anomaly");
- let body=`TECHNIQUE VDP — CHECKLIST TECHNIQUE\\n\\nBateau : ${currentBoat.name}\\nDate : ${date}\\nTechnicien : ${tech}\\n\\n`;
- if(!anomalies.length)body+="AUCUNE ANOMALIE CONSTATÉE.\\n";else{body+="ANOMALIES :\\n";anomalies.forEach((it,i)=>body+=`${i+1}. ${it.title}\\n   ${answers[it.id].desc}\\n`)}
- body+="\\nLes photos éventuelles doivent être jointes manuellement à l'e-mail.";
+ for(const it of levelAnomalies){
+   const li=levelInfo(it.title);
+   const q=Number(answers[it.id].quantity_added);
+   const {error}=await client.from("fluid_logs").insert({
+     log_date:date,
+     boat_name:currentBoat.name,
+     equipment:li.equipment,
+     fluid_type:li.fluid_type,
+     quantity_added:q,
+     level_observation:`Checklist — ${it.title} — ${String(answers[it.id].desc||"").trim()}`,
+     operator_name:tech,
+     source:"Checklist",
+     created_by:profile?.id||null
+   });
+   if(error){
+     alert("Impossible d'enregistrer le suivi de niveau : "+error.message);
+     console.error("CHECKLIST FLUID LOG ERROR",error);
+     return;
+   }
+ }
+ let body=`TECHNIQUE VDP — CHECKLIST TECHNIQUE\n\nBateau : ${currentBoat.name}\nDate : ${date}\nTechnicien : ${tech}\n\n`;
+ if(!anomalies.length) body+="AUCUNE ANOMALIE CONSTATÉE.\n";
+ else{
+   body+="ANOMALIES :\n";
+   anomalies.forEach((it,i)=>{
+     const li=levelInfo(it.title);
+     body+=`${i+1}. ${it.title}\n   ${answers[it.id].desc}\n`;
+     if(li) body+=`   Quantité rajoutée : ${answers[it.id].quantity_added} L\n`;
+   });
+ }
+ body+="\nLes photos éventuelles doivent être jointes manuellement à l'e-mail.";
  const subject=encodeURIComponent(`TECHNIQUE VDP — ${currentBoat.name} — ${date}`);
  location.href=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
 }

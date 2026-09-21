@@ -270,7 +270,7 @@ function renderChecklist(){
  `<div class="card"><button style="width:100%" onclick="validateChecklist()">✓ Valider et préparer l'e-mail</button><p class="small">Le résultat n'est pas enregistré comme fiche serveur. L'e-mail s'ouvre dans l'application de messagerie de l'appareil et doit être envoyé manuellement.</p></div>`;
 }
 function answer(id,status){answers[id]=answers[id]||{};answers[id].status=status;renderChecklist()}
-function addPhotos(id,files){answers[id]=answers[id]||{};answers[id].photos=answers[id].photos||[];[...files].forEach(f=>{let r=new FileReader();r.onload=()=>{answers[id].photos.push(r.result);renderChecklist()};r.readAsDataURL(f)})}
+function addPhotos(id,files){answers[id]=answers[id]||{};answers[id].photos=answers[id].photos||[];answers[id].photoFiles=answers[id].photoFiles||[];[...files].forEach(f=>{answers[id].photoFiles.push(f);let r=new FileReader();r.onload=()=>{answers[id].photos.push(r.result);renderChecklist()};r.readAsDataURL(f)})}
 function validateChecklist(){
  const tech=document.getElementById("techName").value.trim(),date=document.getElementById("techDate").value;
  if(!tech||!date){alert("Nom du technicien et date obligatoires.");return}
@@ -279,13 +279,24 @@ function validateChecklist(){
  const bad=currentItems.filter(i=>answers[i.id].status==="anomaly"&&!String(answers[i.id].desc||"").trim());
  if(bad.length){alert("Une description est obligatoire pour chaque anomalie.");return}
  const anomalies=currentItems.filter(i=>answers[i.id].status==="anomaly");
- saveChecklistLevels(tech,date).then(()=>{
- let body=`CHECK VDP — CHECKLIST TECHNIQUE\\n\\nBateau : ${currentBoat.name}\\nDate : ${date}\\nTechnicien : ${tech}\\n\\n`;
- if(!anomalies.length)body+="AUCUNE ANOMALIE CONSTATÉE.\\n";else{body+="ANOMALIES :\\n";anomalies.forEach((it,i)=>body+=`${i+1}. ${it.title}\\n   ${answers[it.id].desc}\\n`)}
- body+="\\nLes photos éventuelles doivent être jointes manuellement à l'e-mail.";
- const subject=encodeURIComponent(`CHECK VDP — ${currentBoat.name} — ${date}`);
- location.href=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
- }).catch(e=>alert("La checklist est prête, mais l’enregistrement des appoints a échoué : "+e.message));
+ saveChecklistLevels(tech,date).then(async()=>{
+  const photoLinks=[];
+  for(const it of anomalies){
+   const files=answers[it.id].photoFiles||[];
+   for(let n=0;n<files.length;n++){
+    const f=files[n],safe=f.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+    const path=`checklists/${currentBoat.name.replace(/[^a-zA-Z0-9_-]/g,"_")}/${date}/${Date.now()}_${it.id}_${n}_${safe}`;
+    const up=await client.storage.from("checklist-photos").upload(path,f,{upsert:false,contentType:f.type||"image/jpeg"});
+    if(up.error)throw new Error("Upload photo : "+up.error.message);
+    const pub=client.storage.from("checklist-photos").getPublicUrl(path);photoLinks.push({title:it.title,url:pub.data.publicUrl});
+   }
+  }
+  let body=`CHECK VDP — CHECKLIST TECHNIQUE\n\nBateau : ${currentBoat.name}\nDate : ${date}\nTechnicien : ${tech}\n\n`;
+  if(!anomalies.length)body+="AUCUNE ANOMALIE CONSTATÉE.\n";else{body+="ANOMALIES :\n";anomalies.forEach((it,i)=>body+=`${i+1}. ${it.title}\n   ${answers[it.id].desc}\n`)}
+  if(photoLinks.length){body+="\nPHOTOS :\n";photoLinks.forEach((x,i)=>body+=`${i+1}. ${x.title} — ${x.url}\n`)}else body+="\nAucune photo jointe.\n";
+  const subject=encodeURIComponent(`CHECK VDP — ${currentBoat.name} — ${date}`);
+  location.href=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
+ }).catch(e=>alert("La checklist est prête, mais l’enregistrement des appoints/photos a échoué : "+e.message));
 }
 function renderAdmin(){
  if(profile?.role!=="admin")return;

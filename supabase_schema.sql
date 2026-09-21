@@ -138,6 +138,9 @@ create table if not exists public.fluid_logs (
   created_by uuid references auth.users(id)
 );
 
+alter table public.fluid_logs add column if not exists source text not null default 'manual';
+alter table public.fluid_logs add column if not exists checklist_item_id uuid references public.checklist_items(id);
+
 -- Fonction utilisée par les politiques RLS pour reconnaître un administrateur.
 create or replace function public.is_admin()
 returns boolean

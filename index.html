@@ -359,7 +359,7 @@ function renderChecklist(){
 }
 function answer(id,status){answers[id]=answers[id]||{};answers[id].status=status;renderChecklist()}
 function addPhotos(id,files){answers[id]=answers[id]||{};answers[id].photos=answers[id].photos||[];[...files].forEach(f=>{let r=new FileReader();r.onload=()=>{answers[id].photos.push(r.result);renderChecklist()};r.readAsDataURL(f)})}
-function validateChecklist(){
+async function validateChecklist(){
  const tech=document.getElementById("techName").value.trim(),date=document.getElementById("techDate").value;
  if(!tech||!date){alert("Nom du technicien et date obligatoires.");return}
  const missing=currentItems.filter(i=>!answers[i.id]?.status);

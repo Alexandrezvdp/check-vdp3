@@ -141,9 +141,8 @@ function renderCalendar(){
 }
 function renderDayPanel(){
  const ts=tasks.filter(t=>t.task_date===selectedDate);
- const canAdmin=profile?.role==="admin";
  document.getElementById("dayPanel").innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0;text-transform:capitalize">${fmt(selectedDate)}</h2><div class="small">${ts.length} tâche(s)</div></div><button onclick="showAddTaskForm()">＋ Ajouter une tâche</button></div>`+
- (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div>${Array.isArray(t.photo_urls)&&t.photo_urls.length?`<div class="small" style="margin-top:6px">📷 ${t.photo_urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">Voir la photo ${i+1}</a>`).join(" · ")}</div>`:""}</div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px">${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button></div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
+ (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div>${Array.isArray(t.photo_urls)&&t.photo_urls.length?`<div class="small" style="margin-top:6px">📷 ${t.photo_urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">Voir la photo ${i+1}</a>`).join(" · ")}</div>`:""}</div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px"><button class="secondary" onclick="showEditTaskForm('${t.id}')">✎ Modifier</button>${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button></div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
 }
 function selectDay(ds){selectedDate=ds;renderCalendar()}
 function moveMonth(n){calDate.setMonth(calDate.getMonth()+n);renderCalendar()}
@@ -165,6 +164,59 @@ function showAddTaskForm(){
  <div class="row" style="margin-top:10px"><button onclick="saveNewTask()">Enregistrer</button><button class="secondary" onclick="document.getElementById('addTaskForm').remove()">Annuler</button></div>
  <div id="addTaskMsg" class="small" style="margin-top:8px"></div>`;
  panel.prepend(form);
+}
+function showEditTaskForm(id){
+ const t=tasks.find(x=>x.id===id);
+ if(!t)return;
+ const existing=document.getElementById("editTaskForm");
+ if(existing)existing.remove();
+ const form=document.createElement("div");
+ form.id="editTaskForm";
+ form.className="card";
+ const photos=Array.isArray(t.photo_urls)?t.photo_urls:[];
+ form.innerHTML=`<h3 style="margin-top:0">✎ Modifier la tâche</h3>
+ <div class="grid">
+  <div><label>Date</label><input id="editTaskDate" type="date" value="${esc(t.task_date||"")}"></div>
+  <div><label>Bateau</label><select id="editTaskBoat">${BOATS.map(b=>`<option ${b===t.boat_name?"selected":""}>${esc(b)}</option>`).join("")}</select></div>
+  <div><label>Opérateur</label><input id="editTaskOperator" value="${esc(t.operator_name||"")}"></div>
+  <div style="grid-column:1/-1"><label>Tâche</label><textarea id="editTaskText" rows="3">${esc(t.task||"")}</textarea></div>
+  ${photos.length?`<div style="grid-column:1/-1"><label>Photos actuelles</label><div class="small">${photos.map((u,i)=>`<label style="display:block;margin:5px 0"><input type="checkbox" class="editTaskKeepPhoto" data-url="${esc(u)}" checked> <a href="${esc(u)}" target="_blank" rel="noopener">Voir la photo ${i+1}</a></label>`).join("")}</div></div>`:""}
+  <div style="grid-column:1/-1"><label>Ajouter des photos</label><input id="editTaskPhotos" type="file" accept="image/*" capture="environment" multiple><div class="small">Les nouvelles photos seront ajoutées aux photos conservées.</div></div>
+ </div>
+ <div class="row" style="margin-top:10px"><button onclick="saveEditedTask('${t.id}')">Enregistrer les modifications</button><button class="secondary" onclick="document.getElementById('editTaskForm').remove()">Annuler</button></div>
+ <div id="editTaskMsg" class="small" style="margin-top:8px"></div>`;
+ document.getElementById("dayPanel").prepend(form);
+}
+async function saveEditedTask(id){
+ const t=tasks.find(x=>x.id===id);
+ if(!t)return;
+ const date=document.getElementById("editTaskDate").value;
+ const boat=document.getElementById("editTaskBoat").value;
+ const operator=document.getElementById("editTaskOperator").value.trim();
+ const task=document.getElementById("editTaskText").value.trim();
+ const files=[...(document.getElementById("editTaskPhotos")?.files||[])];
+ if(!date||!boat||!operator||!task){setMsg("editTaskMsg","Tous les champs sont obligatoires.",true);return}
+ const button=document.querySelector('#editTaskForm button:not(.secondary)');
+ button?.setAttribute('disabled','disabled');
+ setMsg("editTaskMsg","Enregistrement des modifications…");
+ const kept=[...document.querySelectorAll('.editTaskKeepPhoto:checked')].map(x=>x.dataset.url).filter(Boolean);
+ const urls=[...kept];
+ for(let i=0;i<files.length;i++){
+   const f=files[i];
+   const safe=f.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+   const path=`tasks/${date}/${id}/${Date.now()}_${i}_${safe}`;
+   const up=await client.storage.from("task-photos").upload(path,f,{upsert:false,contentType:f.type||"image/jpeg"});
+   if(up.error){setMsg("editTaskMsg","La tâche est conservée mais une nouvelle photo n'a pas pu être envoyée : "+up.error.message,true);continue}
+   urls.push(client.storage.from("task-photos").getPublicUrl(path).data.publicUrl);
+ }
+ const patch={task_date:date,boat_name:boat,operator_name:operator,task,photo_urls:urls};
+ const r=await client.from("tasks").update(patch).eq("id",id);
+ if(r.error){setMsg("editTaskMsg","Impossible de modifier la tâche : "+r.error.message,true);button?.removeAttribute('disabled');return}
+ selectedDate=date;
+ document.getElementById("editTaskForm")?.remove();
+ await refresh();
+ renderCalendar();
+ alert("✓ Tâche modifiée et replanifiée.");
 }
 async function saveNewTask(){
  const date=document.getElementById("newTaskDate").value;

@@ -72,7 +72,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <script>
 const {createClient}=supabase;
 const client=createClient(VDP_CONFIG.supabaseUrl,VDP_CONFIG.supabaseKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
-const BOATS=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile"];
+const BOATS=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile","Vedettes de Paris","Gustave","Batobar","Quai","Billetterie","Boutique","Café des Vedettes","Ponton Alex","Marinella","Vernazza"];
 const STANDARD=[
 "Vérification de l'ensemble des locaux (fuite, eau dans les fonds, bruits anormaux,...)",
 "Vérification niveau liquide de refroidissement moteurs",
@@ -143,7 +143,7 @@ function renderDayPanel(){
  const ts=tasks.filter(t=>t.task_date===selectedDate);
  const canAdmin=profile?.role==="admin";
  document.getElementById("dayPanel").innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0;text-transform:capitalize">${fmt(selectedDate)}</h2><div class="small">${ts.length} tâche(s)</div></div><button onclick="showAddTaskForm()">＋ Ajouter une tâche</button></div>`+
- (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px">${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button></div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
+ (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div>${Array.isArray(t.photo_urls)&&t.photo_urls.length?`<div class="small" style="margin-top:6px">📷 ${t.photo_urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">Voir la photo ${i+1}</a>`).join(" · ")}</div>`:""}</div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px">${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button></div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
 }
 function selectDay(ds){selectedDate=ds;renderCalendar()}
 function moveMonth(n){calDate.setMonth(calDate.getMonth()+n);renderCalendar()}
@@ -160,6 +160,7 @@ function showAddTaskForm(){
   <div><label>Bateau</label><select id="newTaskBoat">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div>
   <div><label>Opérateur</label><input id="newTaskOperator" placeholder="Nom de l'opérateur"></div>
   <div style="grid-column:1/-1"><label>Tâche</label><textarea id="newTaskText" rows="3" placeholder="Décrire la tâche"></textarea></div>
+  <div style="grid-column:1/-1"><label>Photo(s) de la tâche</label><input id="newTaskPhotos" type="file" accept="image/*" capture="environment" multiple><div class="small">Les photos seront stockées dans Supabase et les liens apparaîtront dans la tâche.</div></div>
  </div>
  <div class="row" style="margin-top:10px"><button onclick="saveNewTask()">Enregistrer</button><button class="secondary" onclick="document.getElementById('addTaskForm').remove()">Annuler</button></div>
  <div id="addTaskMsg" class="small" style="margin-top:8px"></div>`;
@@ -170,11 +171,23 @@ async function saveNewTask(){
  const boat=document.getElementById("newTaskBoat").value;
  const operator=document.getElementById("newTaskOperator").value.trim();
  const task=document.getElementById("newTaskText").value.trim();
+ const files=[...(document.getElementById("newTaskPhotos")?.files||[])];
  if(!date||!boat||!operator||!task){setMsg("addTaskMsg","Tous les champs sont obligatoires.",true);return}
  const button=document.querySelector('#addTaskForm button:not(.secondary)');
  button?.setAttribute('disabled','disabled');
- const {error}=await client.from("tasks").insert({task_date:date,boat_name:boat,operator_name:operator,task,status:"todo"});
+ setMsg("addTaskMsg","Enregistrement de la tâche…");
+ const {data:created,error}=await client.from("tasks").insert({task_date:date,boat_name:boat,operator_name:operator,task,status:"todo",photo_urls:[]}).select("id").single();
  if(error){setMsg("addTaskMsg","Impossible d'ajouter la tâche : "+error.message,true);button?.removeAttribute('disabled');return}
+ const urls=[];
+ for(let i=0;i<files.length;i++){
+   const f=files[i];
+   const safe=f.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+   const path=`tasks/${date}/${created.id}/${Date.now()}_${i}_${safe}`;
+   const up=await client.storage.from("task-photos").upload(path,f,{upsert:false,contentType:f.type||"image/jpeg"});
+   if(up.error){setMsg("addTaskMsg","La tâche est créée mais une photo n'a pas pu être envoyée : "+up.error.message,true);continue}
+   urls.push(client.storage.from("task-photos").getPublicUrl(path).data.publicUrl);
+ }
+ if(urls.length){const ur=await client.from("tasks").update({photo_urls:urls}).eq("id",created.id);if(ur.error){setMsg("addTaskMsg","Tâche créée, mais impossible d'enregistrer les liens photos : "+ur.error.message,true);button?.removeAttribute('disabled');return}}
  selectedDate=date;
  await refresh();
  renderCalendar();

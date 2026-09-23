@@ -374,7 +374,7 @@ function renderChecklist(){
  const date=checklistDate||isoDate(new Date());
  document.getElementById("page-checklist").innerHTML=`<div class="card"><div class="row"><button class="secondary" onclick="showPage('home')">← Retour</button><div class="grow"><h2 style="margin:0">🔧 Technique — ${esc(b.name)}</h2></div></div><p class="small">Renseignez les points ci-dessous. Le nom du technicien et la date sont conservés pendant toute la checklist.</p></div>`+
  currentItems.map((it,n)=>{let a=answers[it.id]||{};return `<div class="item"><div class="item-title">${n+1}. ${esc(it.title)}</div><div class="choices"><button class="${a.status==="ok"?"sel-ok":""}" onclick="answer('${it.id}','ok')">✓ Conforme</button><button class="${a.status==="anomaly"?"sel-anom":""}" onclick="answer('${it.id}','anomaly')">⚠ Anomalie</button><button class="${a.status==="na"?"sel-na":""}" onclick="answer('${it.id}','na')">— N/A</button></div>${a.status==="anomaly"?`<div class="anomaly"><label>Description obligatoire</label><textarea id="desc-${it.id}" oninput="answers['${it.id}'].desc=this.value" placeholder="Décrire l'anomalie">${esc(a.desc||"")}</textarea>${levelInputs(it,a)}<label>Photo(s)</label><input type="file" accept="image/*" capture="environment" multiple onchange="addPhotos('${it.id}',this.files)"><div class="photos">${(a.photos||[]).map(p=>`<img src="${p}">`).join("")}</div></div>`:""}</div>`}).join("")+
- `<div class="card"><h3 style="margin-top:0">👤 Informations de la checklist</h3><label>Nom du technicien</label><input id="techName" value="${esc(tech)}" placeholder="Nom et prénom" oninput="checklistTechName=this.value"><label>Date</label><input id="techDate" type="date" value="${esc(date)}" onchange="checklistDate=this.value"><div style="margin-top:12px"><button style="width:100%" onclick="validateChecklist()">✓ Valider et préparer l'e-mail</button></div><p class="small">Après l'ouverture de l'e-mail, l'application revient automatiquement sur cette checklist.</p></div>`;
+ `<div class="card"><h3 style="margin-top:0">👤 Informations de la checklist</h3><label>Nom du technicien</label><input id="techName" value="${esc(tech)}" placeholder="Nom et prénom" oninput="checklistTechName=this.value"><label>Date</label><input id="techDate" type="date" value="${esc(date)}" onchange="checklistDate=this.value"><div style="margin-top:12px"><button style="width:100%" onclick="validateChecklist()">✓ Valider et préparer l'e-mail</button></div><p class="small">Après validation, vous revenez sur la liste des checklists.</p></div>`;
 }
 
 function answer(id,status){answers[id]=answers[id]||{};answers[id].status=status;renderChecklist()}
@@ -413,9 +413,13 @@ async function validateChecklist(){
   if(saved.error)throw new Error('Enregistrement de la checklist : '+saved.error.message);
   const subject=encodeURIComponent(`CHECK VDP — ${currentBoat.name} — ${date}`);
   const mailto=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
-  alert('✓ Checklist validée et enregistrée. L’e-mail va s’ouvrir. Après l’envoi, revenez à l’application : la checklist sera affichée à nouveau.');
+  alert('✓ Checklist validée et enregistrée. L’e-mail va s’ouvrir. À votre retour dans l’application, vous serez sur la liste des checklists.');
+  // On quitte explicitement la checklist en cours avant d’ouvrir le mail :
+  // ainsi, au retour depuis la messagerie, on ne retrouve pas la checklist déjà validée.
+  currentBoat=null; currentItems=[]; answers={}; photos={}; checklistTechName=""; checklistDate="";
+  renderHome();
+  showPage("home");
   location.href=mailto;
-  setTimeout(()=>{renderChecklist();showPage("checklist")},1500);
  } catch(e) {
   alert('La validation a échoué : '+e.message);
   if(button){button.disabled=false;button.textContent="✓ Valider et préparer l'e-mail"}

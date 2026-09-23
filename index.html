@@ -104,7 +104,7 @@ const ETOILE=[
 "Alimentations 24 V"
 ];
 let profile=null,boats=[],items=[],tasks=[],levelRecords=[];
-let currentBoat=null,currentItems=[],answers={},photos={};
+let currentBoat=null,currentItems=[],answers={},photos={},checklistTechName="",checklistDate="";
 let calDate=new Date(); let selectedDate=isoDate(new Date());
 
 function isoDate(d){return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
@@ -261,7 +261,7 @@ async function completeTask(id){
  location.href=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${body}`;
  await refresh();renderCalendar();
 }
-function openChecklist(id){currentBoat=boats.find(b=>b.id===id);currentItems=items.filter(i=>i.boat_id===id);answers={};photos={};renderChecklist();showPage("checklist")}
+function openChecklist(id){currentBoat=boats.find(b=>b.id===id);currentItems=items.filter(i=>i.boat_id===id);answers={};photos={};checklistTechName="";checklistDate=isoDate(new Date());renderChecklist();showPage("checklist")}
 
 function levelSpec(boatName,title){
   const t=(title||"").toLowerCase();
@@ -369,15 +369,21 @@ async function addManualLevel(){
 }
 
 function renderChecklist(){
- const b=currentBoat; document.getElementById("page-checklist").innerHTML=`<div class="card"><div class="row"><button class="secondary" onclick="showPage('home')">← Retour</button><div class="grow"><h2 style="margin:0">🔧 Technique — ${esc(b.name)}</h2></div></div><label>Nom du technicien</label><input id="techName" placeholder="Nom et prénom"><label>Date</label><input id="techDate" type="date" value="${isoDate(new Date())}"></div>`+
+ const b=currentBoat;
+ const tech=checklistTechName||"";
+ const date=checklistDate||isoDate(new Date());
+ document.getElementById("page-checklist").innerHTML=`<div class="card"><div class="row"><button class="secondary" onclick="showPage('home')">← Retour</button><div class="grow"><h2 style="margin:0">🔧 Technique — ${esc(b.name)}</h2></div></div><p class="small">Renseignez les points ci-dessous. Le nom du technicien et la date sont conservés pendant toute la checklist.</p></div>`+
  currentItems.map((it,n)=>{let a=answers[it.id]||{};return `<div class="item"><div class="item-title">${n+1}. ${esc(it.title)}</div><div class="choices"><button class="${a.status==="ok"?"sel-ok":""}" onclick="answer('${it.id}','ok')">✓ Conforme</button><button class="${a.status==="anomaly"?"sel-anom":""}" onclick="answer('${it.id}','anomaly')">⚠ Anomalie</button><button class="${a.status==="na"?"sel-na":""}" onclick="answer('${it.id}','na')">— N/A</button></div>${a.status==="anomaly"?`<div class="anomaly"><label>Description obligatoire</label><textarea id="desc-${it.id}" oninput="answers['${it.id}'].desc=this.value" placeholder="Décrire l'anomalie">${esc(a.desc||"")}</textarea>${levelInputs(it,a)}<label>Photo(s)</label><input type="file" accept="image/*" capture="environment" multiple onchange="addPhotos('${it.id}',this.files)"><div class="photos">${(a.photos||[]).map(p=>`<img src="${p}">`).join("")}</div></div>`:""}</div>`}).join("")+
- `<div class="card"><button style="width:100%" onclick="validateChecklist()">✓ Valider et préparer l'e-mail</button><p class="small">Le résultat n'est pas enregistré comme fiche serveur. L'e-mail s'ouvre dans l'application de messagerie de l'appareil et doit être envoyé manuellement.</p></div>`;
+ `<div class="card"><h3 style="margin-top:0">👤 Informations de la checklist</h3><label>Nom du technicien</label><input id="techName" value="${esc(tech)}" placeholder="Nom et prénom" oninput="checklistTechName=this.value"><label>Date</label><input id="techDate" type="date" value="${esc(date)}" onchange="checklistDate=this.value"><div style="margin-top:12px"><button style="width:100%" onclick="validateChecklist()">✓ Valider et préparer l'e-mail</button></div><p class="small">Après l'ouverture de l'e-mail, l'application revient automatiquement sur cette checklist.</p></div>`;
 }
+
 function answer(id,status){answers[id]=answers[id]||{};answers[id].status=status;renderChecklist()}
 function setLevelQty(id,key,value){answers[id]=answers[id]||{};answers[id].levels=answers[id].levels||{};answers[id].levels[key]=value}
 function addPhotos(id,files){answers[id]=answers[id]||{};answers[id].photos=answers[id].photos||[];answers[id].photoFiles=answers[id].photoFiles||[];[...files].forEach(f=>{answers[id].photoFiles.push(f);let r=new FileReader();r.onload=()=>{answers[id].photos.push(r.result);renderChecklist()};r.readAsDataURL(f)})}
 async function validateChecklist(){
- const tech=document.getElementById("techName").value.trim(),date=document.getElementById("techDate").value;
+ const tech=(document.getElementById("techName")?.value||checklistTechName||"").trim();
+ const date=document.getElementById("techDate")?.value||checklistDate||"";
+ checklistTechName=tech; checklistDate=date;
  if(!tech||!date){alert("Nom du technicien et date obligatoires.");return}
  const missing=currentItems.filter(i=>!answers[i.id]?.status);
  if(missing.length){alert("Tous les points doivent être renseignés.");return}
@@ -385,8 +391,7 @@ async function validateChecklist(){
  if(bad.length){alert("Une description est obligatoire pour chaque anomalie.");return}
  const anomalies=currentItems.filter(i=>answers[i.id].status==="anomaly");
  const button=document.querySelector('#page-checklist button[onclick="validateChecklist()"]');
- button?.setAttribute('disabled','disabled');
- if(button)button.textContent='⏳ Validation en cours…';
+ if(button){button.disabled=true;button.textContent='⏳ Validation en cours…'}
  try {
   await saveChecklistLevels(tech,date);
   const photoLinks=[];
@@ -403,25 +408,20 @@ async function validateChecklist(){
   let body=`CHECK VDP — CHECKLIST TECHNIQUE\n\nBateau : ${currentBoat.name}\nDate : ${date}\nTechnicien : ${tech}\n\n`;
   if(!anomalies.length)body+="AUCUNE ANOMALIE CONSTATÉE.\n";else{body+="ANOMALIES :\n";anomalies.forEach((it,i)=>body+=`${i+1}. ${it.title}\n   ${answers[it.id].desc}\n`)}
   if(photoLinks.length){body+="\nPHOTOS :\n";photoLinks.forEach((x,i)=>body+=`${i+1}. ${x.title} — ${x.url}\n`)}else body+="\nAucune photo jointe.\n";
-  const submission={
-   boat_name:currentBoat.name,
-   checklist_date:date,
-   operator_name:tech,
-   result: {
-    items: currentItems.map(it=>({id:it.id,title:it.title,status:answers[it.id]?.status||null,description:answers[it.id]?.desc||'',level_quantities:answers[it.id]?.levels||{}})),
-    photo_links: photoLinks.map(x=>({title:x.title,url:x.url}))
-   }
-  };
+  const submission={boat_name:currentBoat.name,checklist_date:date,operator_name:tech,result:{items:currentItems.map(it=>({id:it.id,title:it.title,status:answers[it.id]?.status||null,description:answers[it.id]?.desc||'',level_quantities:answers[it.id]?.levels||{}})),photo_links:photoLinks.map(x=>({title:x.title,url:x.url}))}};
   const saved=await client.from('checklist_submissions').insert(submission);
   if(saved.error)throw new Error('Enregistrement de la checklist : '+saved.error.message);
   const subject=encodeURIComponent(`CHECK VDP — ${currentBoat.name} — ${date}`);
-  location.href=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
-  alert('✓ Checklist validée et enregistrée. L’e-mail va s’ouvrir.');
+  const mailto=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
+  alert('✓ Checklist validée et enregistrée. L’e-mail va s’ouvrir. Après l’envoi, revenez à l’application : la checklist sera affichée à nouveau.');
+  location.href=mailto;
+  setTimeout(()=>{renderChecklist();showPage("checklist")},1500);
  } catch(e) {
   alert('La validation a échoué : '+e.message);
-  if(button){button.removeAttribute('disabled');button.textContent='✓ Valider et préparer l’e-mail'}
+  if(button){button.disabled=false;button.textContent="✓ Valider et préparer l'e-mail"}
  }
 }
+
 function renderAdmin(){
  if(profile?.role!=="admin")return;
  document.getElementById("page-admin").innerHTML=`<div class="card"><h2>⚙️ Administration</h2><p class="muted">Les modifications sont enregistrées dans la base partagée et deviennent disponibles sur les autres appareils.</p></div>`+

@@ -126,10 +126,10 @@ async function loadData(){
  r=await client.from("checklist_items").select("*").eq("active",true).order("boat_id").order("position"); if(r.error)throw r.error; items=r.data||[];
  r=await client.from("tasks").select("*").order("task_date").order("created_at"); if(r.error)throw r.error; tasks=r.data||[];
  r=await client.from("level_records").select("*").order("created_at",{ascending:false}); if(r.error)throw r.error; levelRecords=r.data||[];
- r=await client.from("checklist_submissions").select("*").order("checklist_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error)throw r.error; checklistSubmissions=r.data||[];
+ r=await client.from("checklist_submissions").select("*").order("checklist_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Historique des checklists indisponible :",r.error.message);checklistSubmissions=[];} else checklistSubmissions=r.data||[];
 }
 function renderHome(){
- const html=`<div class="card"><h2>Les 5 bateaux</h2><p class="muted">Technique disponible. Matin et Soir : à venir.</p></div><div class="grid">`+
+ const html=`<div class="card"><div class="row"><div class="grow"><h2 style="margin:0">Les 5 bateaux</h2><p class="muted">Technique disponible. Matin et Soir : à venir.</p></div><button onclick="showPage('history');renderChecklistHistory()">📋 Voir les checklists enregistrées</button></div></div><div class="grid">`+
  boats.map(b=>`<div class="card boat"><div><h3>⚓ ${esc(b.name)}</h3><span class="pill">🔧 Technique</span><span class="pill">☀️ Matin — à venir</span><span class="pill">🌙 Soir — à venir</span></div><button onclick="openChecklist('${b.id}')">Ouvrir</button></div>`).join("")+"</div>";
  document.getElementById("page-home").innerHTML=html;
 }

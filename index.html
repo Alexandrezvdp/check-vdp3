@@ -436,9 +436,18 @@ function renderChecklistHistory(){
  const list=checklistSubmissions.filter(s=>(!boatFilter||s.boat_name===boatFilter)&&(!dateFilter||s.checklist_date===dateFilter));
  const boatsForFilter=boats.filter(b=>["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile"].includes(b.name));
  document.getElementById("page-history").innerHTML=`<div class="card"><h2>📋 Checklists enregistrées</h2><p class="muted">Consultez les checklists validées par date et par bateau.</p><div class="row"><div class="grow"><label>Bateau</label><select id="historyBoat" onchange="renderChecklistHistory()"><option value="">Tous les bateaux</option>${boatsForFilter.map(b=>`<option value="${esc(b.name)}" ${boatFilter===b.name?"selected":""}>${esc(b.name)}</option>`).join("")}</select></div><div class="grow"><label>Date</label><input id="historyDate" type="date" value="${esc(dateFilter)}" onchange="renderChecklistHistory()"></div><div style="align-self:end"><button class="secondary" onclick="clearChecklistHistoryFilters()">Réinitialiser</button></div></div></div>`+
- (list.length?list.map(s=>{const r=s.result||{}, its=Array.isArray(r.items)?r.items:[], anomalies=its.filter(i=>i.status==="anomaly");return `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0">⚓ ${esc(s.boat_name)}</h3><div class="small">📅 ${esc(s.checklist_date)} · 👤 ${esc(s.operator_name)}</div></div><span class="pill ok">✓ Enregistrée</span></div><div class="small" style="margin-top:8px">${its.length} point(s) · ${anomalies.length} anomalie(s) · Enregistrée le ${new Date(s.created_at).toLocaleString("fr-FR")}</div><div class="row" style="margin-top:10px"><button onclick="viewChecklistSubmission('${s.id}')">👁 Voir la checklist</button></div></div>`}).join(""):`<div class="card"><p class="muted">Aucune checklist enregistrée pour ces critères.</p></div>`);
+ (list.length?list.map(s=>{const r=s.result||{}, its=Array.isArray(r.items)?r.items:[], anomalies=its.filter(i=>i.status==="anomaly");return `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0">⚓ ${esc(s.boat_name)}</h3><div class="small">📅 ${esc(s.checklist_date)} · 👤 ${esc(s.operator_name)}</div></div><span class="pill ok">✓ Enregistrée</span></div><div class="small" style="margin-top:8px">${its.length} point(s) · ${anomalies.length} anomalie(s) · Enregistrée le ${new Date(s.created_at).toLocaleString("fr-FR")}</div><div class="row" style="margin-top:10px"><button onclick="viewChecklistSubmission('${s.id}')">👁 Voir la checklist</button>${profile?.role==="admin"?`<button class="danger" onclick="deleteChecklistSubmission('${s.id}')">🗑 Supprimer</button>`:""}</div></div>`}).join(""):`<div class="card"><p class="muted">Aucune checklist enregistrée pour ces critères.</p></div>`);
 }
 function clearChecklistHistoryFilters(){renderChecklistHistory()}
+async function deleteChecklistSubmission(id){
+ if(profile?.role!=="admin"){alert("Seul un administrateur peut supprimer une checklist enregistrée.");return}
+ const s=checklistSubmissions.find(x=>x.id===id); if(!s)return;
+ if(!confirm(`Supprimer définitivement la checklist du ${s.checklist_date} — ${s.boat_name} ?`))return;
+ const {error}=await client.from("checklist_submissions").delete().eq("id",id);
+ if(error){alert("Suppression impossible : "+error.message);return}
+ checklistSubmissions=checklistSubmissions.filter(x=>x.id!==id);
+ renderChecklistHistory();
+}
 function viewChecklistSubmission(id){
  const s=checklistSubmissions.find(x=>x.id===id); if(!s)return;
  const r=s.result||{},its=Array.isArray(r.items)?r.items:[],photos=Array.isArray(r.photo_links)?r.photo_links:[];

@@ -255,12 +255,12 @@ async function deleteTask(id){
 async function completeTask(id){
  const t=tasks.find(x=>x.id===id); if(!t)return;
  const {error}=await client.from("tasks").update({status:"done",completed_at:new Date().toISOString(),completed_by:profile?.id||null}).eq("id",id);
- if(error){alert(error.message);return}
- const subject=encodeURIComponent(`CHECK VDP — Tâche réalisée — ${t.boat_name} — ${t.task_date}`);
- const body=encodeURIComponent(`Tâche réalisée\\n\\nDate : ${t.task_date}\\nBateau : ${t.boat_name}\\nOpérateur : ${t.operator_name}\\nTâche : ${t.task}`);
- location.href=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${body}`;
- await refresh();renderCalendar();
+ if(error){alert("Impossible d'enregistrer la tâche : "+error.message);return}
+ await refresh();
+ renderCalendar();
+ alert("✓ Tâche enregistrée comme réalisée.");
 }
+
 function openChecklist(id){currentBoat=boats.find(b=>b.id===id);currentItems=items.filter(i=>i.boat_id===id);answers={};photos={};checklistTechName="";checklistDate=isoDate(new Date());renderChecklist();showPage("checklist")}
 
 function levelSpec(boatName,title){
@@ -411,6 +411,7 @@ async function validateChecklist(){
   const submission={boat_name:currentBoat.name,checklist_date:date,operator_name:tech,result:{items:currentItems.map(it=>({id:it.id,title:it.title,status:answers[it.id]?.status||null,description:answers[it.id]?.desc||'',level_quantities:answers[it.id]?.levels||{}})),photo_links:photoLinks.map(x=>({title:x.title,url:x.url}))}};
   const saved=await client.from('checklist_submissions').insert(submission);
   if(saved.error)throw new Error('Enregistrement de la checklist : '+saved.error.message);
+  // La checklist est enregistrée dans Supabase avant l'ouverture de l'e-mail.
   const subject=encodeURIComponent(`CHECK VDP — ${currentBoat.name} — ${date}`);
   const mailto=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
   alert('✓ Checklist validée et enregistrée. L’e-mail va s’ouvrir. À votre retour dans l’application, vous serez sur la liste des checklists.');

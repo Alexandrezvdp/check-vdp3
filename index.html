@@ -385,19 +385,22 @@ async function addManualLevel(){
 function latestTemperatureForBoat(boatName){
   return temperatureRecords.find(x=>x.boat_name===boatName)||null;
 }
+function tempDisplay(v,suffix=""){return v===null||v===undefined||v===""?"—":esc(v)+suffix}
+function tempInputValue(v){return v===null||v===undefined?"":v}
 function renderTemperatures(){
   const tempBoats=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse"];
   const cards=tempBoats.map(b=>{
     const x=latestTemperatureForBoat(b);
     return `<div class="card"><h3>⚓ ${esc(b)}</h3><div class="grid">`+
-      [["Palier Bd","bearing_bd_temp"],["Butée Bd","thrust_bd_temp"],["Palier Td","bearing_td_temp"],["Butée Td","thrust_td_temp"]].map(([label,key])=>`<div class="item"><b>${label}</b><div style="font-size:24px;margin-top:6px">${x?.[key]!==null&&x?.[key]!==undefined&&x?.[key]!==""?esc(x[key])+" °C":"—"}</div><div class="small">Dernier relevé</div></div>`).join("")+`</div>`+
-      (x?`<div class="small" style="margin-top:10px">Dernier relevé : ${new Date(x.created_at).toLocaleString("fr-FR")} · RPM Bd ${x.rpm_bd??"—"} · RPM Td ${x.rpm_td??"—"} · Heures Bd ${x.hours_bd??"—"} · Heures Td ${x.hours_td??"—"} · Opérateur ${esc(x.operator_name||"—")}</div>`:'<p class="muted">Aucun relevé pour ce bateau.</p>')+`</div>`;
+      [["Palier Bd","bearing_bd_temp"],["Butée Bd","thrust_bd_temp"],["Palier Td","bearing_td_temp"],["Butée Td","thrust_td_temp"]].map(([label,key])=>`<div class="item"><b>${label}</b><div style="font-size:24px;margin-top:6px">${tempDisplay(x?.[key]," °C")}</div><div class="small">Dernier relevé</div></div>`).join("")+`</div>`+
+      (x?`<div class="small" style="margin-top:10px">Dernier relevé : ${new Date(x.created_at).toLocaleString("fr-FR")} · Statut : ${esc(x.navigation_status||"—")} · RPM Bd ${tempDisplay(x.rpm_bd)} · RPM Td ${tempDisplay(x.rpm_td)} · Heures Bd ${tempDisplay(x.hours_bd)} · Heures Td ${tempDisplay(x.hours_td)} · Opérateur ${esc(x.operator_name||"—")}</div>`:'<p class="muted">Aucun relevé pour ce bateau.</p>')+`</div>`;
   }).join("");
-  const history=`<div class="card"><h2>Historique des relevés</h2>${temperatureRecords.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Bateau</th><th>Palier Bd</th><th>Butée Bd</th><th>Palier Td</th><th>Butée Td</th><th>RPM Bd</th><th>RPM Td</th><th>Heures Bd</th><th>Heures Td</th><th>Opérateur</th></tr></thead><tbody>${temperatureRecords.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString("fr-FR")}</td><td>${esc(x.boat_name||"—")}</td><td>${x.bearing_bd_temp??"—"}${x.bearing_bd_temp!==null&&x.bearing_bd_temp!==""?" °C":""}</td><td>${x.thrust_bd_temp??"—"}${x.thrust_bd_temp!==null&&x.thrust_bd_temp!==""?" °C":""}</td><td>${x.bearing_td_temp??"—"}${x.bearing_td_temp!==null&&x.bearing_td_temp!==""?" °C":""}</td><td>${x.thrust_td_temp??"—"}${x.thrust_td_temp!==null&&x.thrust_td_temp!==""?" °C":""}</td><td>${x.rpm_bd??"—"}</td><td>${x.rpm_td??"—"}</td><td>${x.hours_bd??"—"}</td><td>${x.hours_td??"—"}</td><td>${esc(x.operator_name||"—")}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Aucun relevé enregistré.</p>`}</div>`;
+  const history=`<div class="card"><h2>Historique des relevés</h2>${temperatureRecords.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Bateau</th><th>Statut navigation</th><th>Palier Bd</th><th>Butée Bd</th><th>Palier Td</th><th>Butée Td</th><th>RPM Bd</th><th>RPM Td</th><th>Heures Bd</th><th>Heures Td</th><th>Opérateur</th><th>Actions</th></tr></thead><tbody>${temperatureRecords.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString("fr-FR")}</td><td>${esc(x.boat_name||"—")}</td><td>${esc(x.navigation_status||"—")}</td><td>${tempDisplay(x.bearing_bd_temp," °C")}</td><td>${tempDisplay(x.thrust_bd_temp," °C")}</td><td>${tempDisplay(x.bearing_td_temp," °C")}</td><td>${tempDisplay(x.thrust_td_temp," °C")}</td><td>${tempDisplay(x.rpm_bd)}</td><td>${tempDisplay(x.rpm_td)}</td><td>${tempDisplay(x.hours_bd)}</td><td>${tempDisplay(x.hours_td)}</td><td>${esc(x.operator_name||"—")}</td><td><div class="row"><button class="secondary" onclick="editTemperatureRecord('${x.id}')">Modifier</button><button class="danger" onclick="deleteTemperatureRecord('${x.id}')">Supprimer</button></div></td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Aucun relevé enregistré.</p>`}</div>`;
   document.getElementById("page-temperatures").innerHTML=`<div class="card"><h2>🌡️ Suivi des températures ligne d’arbre</h2><p class="muted">Suivi par bateau hors Paris Etoile. Tous les champs du relevé sont facultatifs.</p></div>`+
   cards+
   `<div class="card"><h2>＋ Ajouter un relevé de température</h2><div class="levelgrid">
     <div><label>Bateau <span class="muted">(facultatif)</span></label><select id="tempBoat"><option value="">— Non renseigné —</option>${tempBoats.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div>
+    <div><label>Statut navigation <span class="muted">(facultatif)</span></label><select id="tempNavigationStatus"><option value="">— Non renseigné —</option><option>Début de croisière</option><option>En croisière</option><option>Fin de croisière</option></select></div>
     <div><label>Palier Bd °C <span class="muted">(facultatif)</span></label><input id="tempBearingBd" type="number" step="0.1" inputmode="decimal"></div>
     <div><label>Butée Bd °C <span class="muted">(facultatif)</span></label><input id="tempThrustBd" type="number" step="0.1" inputmode="decimal"></div>
     <div><label>Palier Td °C <span class="muted">(facultatif)</span></label><input id="tempBearingTd" type="number" step="0.1" inputmode="decimal"></div>
@@ -411,12 +414,35 @@ function renderTemperatures(){
   history;
 }
 function numOrNull(id){const v=document.getElementById(id)?.value.trim();if(v==="")return null;const n=Number(v);return Number.isFinite(n)?n:null}
+function promptNum(label,current){const v=prompt(label,current===null||current===undefined?"":String(current));if(v===null)return {cancel:true};if(v.trim()==="")return {value:null};const n=Number(v.replace(",","."));return {value:Number.isFinite(n)?n:null};}
 async function addTemperatureRecord(){
  const boat=document.getElementById("tempBoat")?.value||"";
- const row={boat_name:boat,bearing_bd_temp:numOrNull("tempBearingBd"),thrust_bd_temp:numOrNull("tempThrustBd"),bearing_td_temp:numOrNull("tempBearingTd"),thrust_td_temp:numOrNull("tempThrustTd"),rpm_bd:numOrNull("tempRpmBd"),rpm_td:numOrNull("tempRpmTd"),hours_bd:numOrNull("tempHoursBd"),hours_td:numOrNull("tempHoursTd"),operator_name:document.getElementById("tempOperator")?.value.trim()||null};
+ const row={boat_name:boat,navigation_status:document.getElementById("tempNavigationStatus")?.value||null,bearing_bd_temp:numOrNull("tempBearingBd"),thrust_bd_temp:numOrNull("tempThrustBd"),bearing_td_temp:numOrNull("tempBearingTd"),thrust_td_temp:numOrNull("tempThrustTd"),rpm_bd:numOrNull("tempRpmBd"),rpm_td:numOrNull("tempRpmTd"),hours_bd:numOrNull("tempHoursBd"),hours_td:numOrNull("tempHoursTd"),operator_name:document.getElementById("tempOperator")?.value.trim()||null};
  const {error}=await client.from("temperature_records").insert(row);
  if(error){alert("Impossible d'enregistrer le relevé : "+error.message);return}
  await loadData();renderTemperatures();alert("✓ Relevé de température enregistré.");
+}
+async function editTemperatureRecord(id){
+ const x=temperatureRecords.find(r=>r.id===id); if(!x)return;
+ const boat=prompt("Bateau (laisser vide si non renseigné) :",x.boat_name||""); if(boat===null)return;
+ const status=prompt("Statut navigation : Début de croisière / En croisière / Fin de croisière (laisser vide si non renseigné) :",x.navigation_status||""); if(status===null)return;
+ const allowed=["","Début de croisière","En croisière","Fin de croisière"]; if(!allowed.includes(status.trim())){alert("Statut navigation invalide.");return}
+ const fields=[
+  ["Palier Bd °C",x.bearing_bd_temp],["Butée Bd °C",x.thrust_bd_temp],["Palier Td °C",x.bearing_td_temp],["Butée Td °C",x.thrust_td_temp],
+  ["RPM moteur Bd",x.rpm_bd],["RPM moteur Td",x.rpm_td],["Heures moteur Bd",x.hours_bd],["Heures moteur Td",x.hours_td]
+ ];
+ const vals=[]; for(const [label,val] of fields){const r=promptNum(label,val);if(r.cancel)return;vals.push(r.value)}
+ const operator=prompt("Nom de l’opérateur (laisser vide si non renseigné) :",x.operator_name||""); if(operator===null)return;
+ const row={boat_name:boat.trim(),navigation_status:status.trim()||null,bearing_bd_temp:vals[0],thrust_bd_temp:vals[1],bearing_td_temp:vals[2],thrust_td_temp:vals[3],rpm_bd:vals[4],rpm_td:vals[5],hours_bd:vals[6],hours_td:vals[7],operator_name:operator.trim()||null};
+ const {error}=await client.from("temperature_records").update(row).eq("id",id);
+ if(error){alert("Impossible de modifier le relevé : "+error.message);return}
+ await loadData();renderTemperatures();alert("✓ Relevé modifié.");
+}
+async function deleteTemperatureRecord(id){
+ if(!confirm("Supprimer définitivement ce relevé de température ?"))return;
+ const {error}=await client.from("temperature_records").delete().eq("id",id);
+ if(error){alert("Impossible de supprimer le relevé : "+error.message);return}
+ await loadData();renderTemperatures();
 }
 
 function renderChecklist(){

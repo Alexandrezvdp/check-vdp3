@@ -56,6 +56,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <button data-page="home" class="active">⚓ Bateaux</button>
 <button data-page="calendar">📅 Planning</button>
 <button data-page="levels">🛢️ Suivi niveaux</button>
+<button data-page="temperatures">🌡️ Températures ligne d’arbre</button>
 <button data-page="history">📋 Checklists enregistrées</button>
 <button data-page="admin" id="adminNav" class="hidden">⚙️ Administration</button>
 <button id="logoutBtn" class="secondary">Déconnexion</button>
@@ -64,6 +65,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <section id="page-home"></section>
 <section id="page-calendar" class="hidden"></section>
 <section id="page-levels" class="hidden"></section>
+<section id="page-temperatures" class="hidden"></section>
 <section id="page-history" class="hidden"></section>
 <section id="page-admin" class="hidden"></section>
 <section id="page-checklist" class="hidden"></section>
@@ -74,7 +76,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <script>
 const {createClient}=supabase;
 const client=createClient(VDP_CONFIG.supabaseUrl,VDP_CONFIG.supabaseKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
-const BOATS=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile","Vedettes de Paris","Gustave","Batobar","Quai","Billetterie","Boutique","Café des Vedettes","Ponton Alex","Marinella","Vernazza"];
+const BOATS=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile","Vedettes de Paris","Gustave","Batobar","Quai","Billetterie","Boutique","Café des Vedettes","Ponton Alex","Marinella","Vernazza","Entrepôt 15ème"];
 const STANDARD=[
 "Vérification de l'ensemble des locaux (fuite, eau dans les fonds, bruits anormaux,...)",
 "Vérification niveau liquide de refroidissement moteurs",
@@ -105,7 +107,7 @@ const ETOILE=[
 "Vérification ventilateurs variateur moteur",
 "Alimentations 24 V"
 ];
-let profile=null,boats=[],items=[],tasks=[],levelRecords=[],checklistSubmissions=[];
+let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],checklistSubmissions=[];
 let currentBoat=null,currentItems=[],answers={},photos={},checklistTechName="",checklistDate="";
 let calDate=new Date(); let selectedDate=isoDate(new Date());
 
@@ -126,6 +128,7 @@ async function loadData(){
  r=await client.from("checklist_items").select("*").eq("active",true).order("boat_id").order("position"); if(r.error)throw r.error; items=r.data||[];
  r=await client.from("tasks").select("*").order("task_date").order("created_at"); if(r.error)throw r.error; tasks=r.data||[];
  r=await client.from("level_records").select("*").order("created_at",{ascending:false}); if(r.error)throw r.error; levelRecords=r.data||[];
+ r=await client.from("temperature_records").select("*").order("created_at",{ascending:false}); if(r.error){console.warn("Suivi des températures indisponible :",r.error.message);temperatureRecords=[];} else temperatureRecords=r.data||[];
  r=await client.from("checklist_submissions").select("*").order("checklist_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Historique des checklists indisponible :",r.error.message);checklistSubmissions=[];} else checklistSubmissions=r.data||[];
 }
 function renderHome(){
@@ -145,7 +148,7 @@ function renderCalendar(){
 function renderDayPanel(){
  const ts=tasks.filter(t=>t.task_date===selectedDate);
  document.getElementById("dayPanel").innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0;text-transform:capitalize">${fmt(selectedDate)}</h2><div class="small">${ts.length} tâche(s)</div></div><button onclick="showAddTaskForm()">＋ Ajouter une tâche</button></div>`+
- (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name)}</div>${Array.isArray(t.photo_urls)&&t.photo_urls.length?`<div class="small" style="margin-top:6px">📷 ${t.photo_urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">Voir la photo ${i+1}</a>`).join(" · ")}</div>`:""}</div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px"><button class="secondary" onclick="showEditTaskForm('${t.id}')">✎ Modifier</button>${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button></div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
+ (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name||"Non renseigné")}</div>${Array.isArray(t.photo_urls)&&t.photo_urls.length?`<div class="small" style="margin-top:6px">📷 ${t.photo_urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">Voir la photo ${i+1}</a>`).join(" · ")}</div>`:""}</div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px"><button class="secondary" onclick="showEditTaskForm('${t.id}')">✎ Modifier</button>${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button></div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
 }
 function selectDay(ds){selectedDate=ds;renderCalendar()}
 function moveMonth(n){calDate.setMonth(calDate.getMonth()+n);renderCalendar()}
@@ -159,8 +162,8 @@ function showAddTaskForm(){
  form.innerHTML=`<h3 style="margin-top:0">＋ Nouvelle tâche</h3>
  <div class="grid">
   <div><label>Date</label><input id="newTaskDate" type="date" value="${esc(selectedDate)}"></div>
-  <div><label>Bateau</label><select id="newTaskBoat">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div>
-  <div><label>Opérateur</label><input id="newTaskOperator" placeholder="Nom de l'opérateur"></div>
+  <div><label>Bateau / lieu</label><select id="newTaskBoat">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div>
+  <div><label>Opérateur <span class="muted">(facultatif)</span></label><input id="newTaskOperator" placeholder="Nom de l'opérateur"></div>
   <div style="grid-column:1/-1"><label>Tâche</label><textarea id="newTaskText" rows="3" placeholder="Décrire la tâche"></textarea></div>
   <div style="grid-column:1/-1"><label>Photo(s) de la tâche</label><input id="newTaskPhotos" type="file" accept="image/*" capture="environment" multiple><div class="small">Les photos seront stockées dans Supabase et les liens apparaîtront dans la tâche.</div></div>
  </div>
@@ -180,7 +183,7 @@ function showEditTaskForm(id){
  form.innerHTML=`<h3 style="margin-top:0">✎ Modifier la tâche</h3>
  <div class="grid">
   <div><label>Date</label><input id="editTaskDate" type="date" value="${esc(t.task_date||"")}"></div>
-  <div><label>Bateau</label><select id="editTaskBoat">${BOATS.map(b=>`<option ${b===t.boat_name?"selected":""}>${esc(b)}</option>`).join("")}</select></div>
+  <div><label>Bateau / lieu</label><select id="editTaskBoat">${BOATS.map(b=>`<option ${b===t.boat_name?"selected":""}>${esc(b)}</option>`).join("")}</select></div>
   <div><label>Opérateur</label><input id="editTaskOperator" value="${esc(t.operator_name||"")}"></div>
   <div style="grid-column:1/-1"><label>Tâche</label><textarea id="editTaskText" rows="3">${esc(t.task||"")}</textarea></div>
   ${photos.length?`<div style="grid-column:1/-1"><label>Photos actuelles</label><div class="small">${photos.map((u,i)=>`<label style="display:block;margin:5px 0"><input type="checkbox" class="editTaskKeepPhoto" data-url="${esc(u)}" checked> <a href="${esc(u)}" target="_blank" rel="noopener">Voir la photo ${i+1}</a></label>`).join("")}</div></div>`:""}
@@ -198,7 +201,8 @@ async function saveEditedTask(id){
  const operator=document.getElementById("editTaskOperator").value.trim();
  const task=document.getElementById("editTaskText").value.trim();
  const files=[...(document.getElementById("editTaskPhotos")?.files||[])];
- if(!date||!boat||!operator||!task){setMsg("editTaskMsg","Tous les champs sont obligatoires.",true);return}
+ if(!date||!boat||!task){setMsg("editTaskMsg","La date, le lieu/bateau et la tâche sont obligatoires.",true);return}
+ if(t.status==="done"&&!operator){setMsg("editTaskMsg","Une tâche réalisée doit obligatoirement avoir un nom d’opérateur.",true);return}
  const button=document.querySelector('#editTaskForm button:not(.secondary)');
  button?.setAttribute('disabled','disabled');
  setMsg("editTaskMsg","Enregistrement des modifications…");
@@ -212,7 +216,7 @@ async function saveEditedTask(id){
    if(up.error){setMsg("editTaskMsg","La tâche est conservée mais une nouvelle photo n'a pas pu être envoyée : "+up.error.message,true);continue}
    urls.push(client.storage.from("task-photos").getPublicUrl(path).data.publicUrl);
  }
- const patch={task_date:date,boat_name:boat,operator_name:operator,task,photo_urls:urls};
+ const patch={task_date:date,boat_name:boat,operator_name:operator||null,task,photo_urls:urls};
  const r=await client.from("tasks").update(patch).eq("id",id);
  if(r.error){setMsg("editTaskMsg","Impossible de modifier la tâche : "+r.error.message,true);button?.removeAttribute('disabled');return}
  selectedDate=date;
@@ -227,11 +231,11 @@ async function saveNewTask(){
  const operator=document.getElementById("newTaskOperator").value.trim();
  const task=document.getElementById("newTaskText").value.trim();
  const files=[...(document.getElementById("newTaskPhotos")?.files||[])];
- if(!date||!boat||!operator||!task){setMsg("addTaskMsg","Tous les champs sont obligatoires.",true);return}
+ if(!date||!boat||!task){setMsg("addTaskMsg","La date, le lieu/bateau et la tâche sont obligatoires.",true);return}
  const button=document.querySelector('#addTaskForm button:not(.secondary)');
  button?.setAttribute('disabled','disabled');
  setMsg("addTaskMsg","Enregistrement de la tâche…");
- const {data:created,error}=await client.from("tasks").insert({task_date:date,boat_name:boat,operator_name:operator,task,status:"todo",photo_urls:[]}).select("id").single();
+ const {data:created,error}=await client.from("tasks").insert({task_date:date,boat_name:boat,operator_name:operator||null,task,status:"todo",photo_urls:[]}).select("id").single();
  if(error){setMsg("addTaskMsg","Impossible d'ajouter la tâche : "+error.message,true);button?.removeAttribute('disabled');return}
  const urls=[];
  for(let i=0;i<files.length;i++){
@@ -257,7 +261,14 @@ async function deleteTask(id){
 }
 async function completeTask(id){
  const t=tasks.find(x=>x.id===id); if(!t)return;
- const {error}=await client.from("tasks").update({status:"done",completed_at:new Date().toISOString(),completed_by:profile?.id||null}).eq("id",id);
+ let operator=(t.operator_name||"").trim();
+ if(!operator){
+   operator=prompt("Nom de l'opérateur obligatoire pour marquer cette tâche comme réalisée :","");
+   if(operator===null)return;
+   operator=operator.trim();
+   if(!operator){alert("Un nom d'opérateur est obligatoire pour valider la tâche.");return}
+ }
+ const {error}=await client.from("tasks").update({status:"done",operator_name:operator,completed_at:new Date().toISOString(),completed_by:profile?.id||null}).eq("id",id);
  if(error){alert("Impossible d'enregistrer la tâche : "+error.message);return}
  await refresh();
  renderCalendar();
@@ -371,6 +382,43 @@ async function addManualLevel(){
   await loadData();renderLevels();alert("Appoint enregistré.");
 }
 
+function latestTemperatureForBoat(boatName){
+  return temperatureRecords.find(x=>x.boat_name===boatName)||null;
+}
+function renderTemperatures(){
+  const tempBoats=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse"];
+  const cards=tempBoats.map(b=>{
+    const x=latestTemperatureForBoat(b);
+    return `<div class="card"><h3>⚓ ${esc(b)}</h3><div class="grid">`+
+      [["Palier Bd","bearing_bd_temp"],["Butée Bd","thrust_bd_temp"],["Palier Td","bearing_td_temp"],["Butée Td","thrust_td_temp"]].map(([label,key])=>`<div class="item"><b>${label}</b><div style="font-size:24px;margin-top:6px">${x?.[key]!==null&&x?.[key]!==undefined&&x?.[key]!==""?esc(x[key])+" °C":"—"}</div><div class="small">Dernier relevé</div></div>`).join("")+`</div>`+
+      (x?`<div class="small" style="margin-top:10px">Dernier relevé : ${new Date(x.created_at).toLocaleString("fr-FR")} · RPM Bd ${x.rpm_bd??"—"} · RPM Td ${x.rpm_td??"—"} · Heures Bd ${x.hours_bd??"—"} · Heures Td ${x.hours_td??"—"} · Opérateur ${esc(x.operator_name||"—")}</div>`:'<p class="muted">Aucun relevé pour ce bateau.</p>')+`</div>`;
+  }).join("");
+  const history=`<div class="card"><h2>Historique des relevés</h2>${temperatureRecords.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Bateau</th><th>Palier Bd</th><th>Butée Bd</th><th>Palier Td</th><th>Butée Td</th><th>RPM Bd</th><th>RPM Td</th><th>Heures Bd</th><th>Heures Td</th><th>Opérateur</th></tr></thead><tbody>${temperatureRecords.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString("fr-FR")}</td><td>${esc(x.boat_name||"—")}</td><td>${x.bearing_bd_temp??"—"}${x.bearing_bd_temp!==null&&x.bearing_bd_temp!==""?" °C":""}</td><td>${x.thrust_bd_temp??"—"}${x.thrust_bd_temp!==null&&x.thrust_bd_temp!==""?" °C":""}</td><td>${x.bearing_td_temp??"—"}${x.bearing_td_temp!==null&&x.bearing_td_temp!==""?" °C":""}</td><td>${x.thrust_td_temp??"—"}${x.thrust_td_temp!==null&&x.thrust_td_temp!==""?" °C":""}</td><td>${x.rpm_bd??"—"}</td><td>${x.rpm_td??"—"}</td><td>${x.hours_bd??"—"}</td><td>${x.hours_td??"—"}</td><td>${esc(x.operator_name||"—")}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Aucun relevé enregistré.</p>`}</div>`;
+  document.getElementById("page-temperatures").innerHTML=`<div class="card"><h2>🌡️ Suivi des températures ligne d’arbre</h2><p class="muted">Suivi par bateau hors Paris Etoile. Tous les champs du relevé sont facultatifs.</p></div>`+
+  cards+
+  `<div class="card"><h2>＋ Ajouter un relevé de température</h2><div class="levelgrid">
+    <div><label>Bateau <span class="muted">(facultatif)</span></label><select id="tempBoat"><option value="">— Non renseigné —</option>${tempBoats.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div>
+    <div><label>Palier Bd °C <span class="muted">(facultatif)</span></label><input id="tempBearingBd" type="number" step="0.1" inputmode="decimal"></div>
+    <div><label>Butée Bd °C <span class="muted">(facultatif)</span></label><input id="tempThrustBd" type="number" step="0.1" inputmode="decimal"></div>
+    <div><label>Palier Td °C <span class="muted">(facultatif)</span></label><input id="tempBearingTd" type="number" step="0.1" inputmode="decimal"></div>
+    <div><label>Butée Td °C <span class="muted">(facultatif)</span></label><input id="tempThrustTd" type="number" step="0.1" inputmode="decimal"></div>
+    <div><label>RPM moteur Bd <span class="muted">(facultatif)</span></label><input id="tempRpmBd" type="number" step="1" inputmode="numeric"></div>
+    <div><label>RPM moteur Td <span class="muted">(facultatif)</span></label><input id="tempRpmTd" type="number" step="1" inputmode="numeric"></div>
+    <div><label>Heures moteur Bd <span class="muted">(facultatif)</span></label><input id="tempHoursBd" type="number" step="0.1" inputmode="decimal"></div>
+    <div><label>Heures moteur Td <span class="muted">(facultatif)</span></label><input id="tempHoursTd" type="number" step="0.1" inputmode="decimal"></div>
+    <div><label>Nom de l’opérateur <span class="muted">(facultatif)</span></label><input id="tempOperator" placeholder="Nom et prénom"></div>
+  </div><div style="margin-top:10px"><button onclick="addTemperatureRecord()">Enregistrer le relevé</button></div><p class="small">Le relevé est enregistré même si certains ou tous les champs sont laissés vides.</p></div>`+
+  history;
+}
+function numOrNull(id){const v=document.getElementById(id)?.value.trim();if(v==="")return null;const n=Number(v);return Number.isFinite(n)?n:null}
+async function addTemperatureRecord(){
+ const boat=document.getElementById("tempBoat")?.value||"";
+ const row={boat_name:boat,bearing_bd_temp:numOrNull("tempBearingBd"),thrust_bd_temp:numOrNull("tempThrustBd"),bearing_td_temp:numOrNull("tempBearingTd"),thrust_td_temp:numOrNull("tempThrustTd"),rpm_bd:numOrNull("tempRpmBd"),rpm_td:numOrNull("tempRpmTd"),hours_bd:numOrNull("tempHoursBd"),hours_td:numOrNull("tempHoursTd"),operator_name:document.getElementById("tempOperator")?.value.trim()||null};
+ const {error}=await client.from("temperature_records").insert(row);
+ if(error){alert("Impossible d'enregistrer le relevé : "+error.message);return}
+ await loadData();renderTemperatures();alert("✓ Relevé de température enregistré.");
+}
+
 function renderChecklist(){
  const b=currentBoat;
  const tech=checklistTechName||"";
@@ -469,11 +517,11 @@ async function adminMove(id,dir){
  let list=items.filter(i=>i.boat_id===items.find(x=>x.id===id).boat_id).sort((a,b)=>a.position-b.position),idx=list.findIndex(x=>x.id===id),j=idx+dir;if(j<0||j>=list.length)return;
  let a=list[idx],b=list[j];await client.from("checklist_items").update({position:b.position}).eq("id",a.id);await client.from("checklist_items").update({position:a.position}).eq("id",b.id);await refresh();renderAdmin()
 }
-async function refresh(){await loadData();renderHome();renderAdmin();renderChecklistHistory();if(!document.getElementById("page-levels").classList.contains("hidden"))renderLevels()}
-document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="history")renderChecklistHistory();if(b.dataset.page==="admin")renderAdmin()});
+async function refresh(){await loadData();renderHome();renderAdmin();renderChecklistHistory();if(!document.getElementById("page-levels").classList.contains("hidden"))renderLevels();if(!document.getElementById("page-temperatures").classList.contains("hidden"))renderTemperatures()}
+document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="history")renderChecklistHistory();if(b.dataset.page==="temperatures")renderTemperatures();if(b.dataset.page==="admin")renderAdmin()});
 document.getElementById("loginBtn").onclick=async()=>{let e=loginEmail.value.trim(),p=loginPassword.value;setMsg("loginMsg","Connexion…");let r=await client.auth.signInWithPassword({email:e,password:p});if(r.error)setMsg("loginMsg",r.error.message,true);else startApp()};
 document.getElementById("logoutBtn").onclick=async()=>{await client.auth.signOut();location.reload()};
-async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderLevels();renderChecklistHistory();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
+async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderLevels();renderTemperatures();renderChecklistHistory();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
 client.auth.onAuthStateChange((_event,session)=>{if(session&&!profile)startApp()});
 (async()=>{const {data:{session}}=await client.auth.getSession();if(session)startApp()})();
 </script>

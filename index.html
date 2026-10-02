@@ -58,6 +58,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <button data-page="levels">🛢️ Suivi niveaux</button>
 <button data-page="temperatures">🌡️ Températures ligne d’arbre</button>
 <button data-page="history">📋 Checklists enregistrées</button>
+<button data-page="audits">🔎 Audit bateaux</button>
 <button data-page="admin" id="adminNav" class="hidden">⚙️ Administration</button>
 <button id="logoutBtn" class="secondary">Déconnexion</button>
 </div></nav>
@@ -67,6 +68,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <section id="page-levels" class="hidden"></section>
 <section id="page-temperatures" class="hidden"></section>
 <section id="page-history" class="hidden"></section>
+<section id="page-audits" class="hidden"></section>
 <section id="page-admin" class="hidden"></section>
 <section id="page-checklist" class="hidden"></section>
 </main>
@@ -107,7 +109,7 @@ const ETOILE=[
 "Vérification ventilateurs variateur moteur",
 "Alimentations 24 V"
 ];
-let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],checklistSubmissions=[];
+let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],checklistSubmissions=[],auditRecords=[];
 let currentBoat=null,currentItems=[],answers={},photos={},checklistTechName="",checklistDate="";
 let calDate=new Date(); let selectedDate=isoDate(new Date());
 
@@ -130,6 +132,7 @@ async function loadData(){
  r=await client.from("level_records").select("*").order("created_at",{ascending:false}); if(r.error)throw r.error; levelRecords=r.data||[];
  r=await client.from("temperature_records").select("*").order("created_at",{ascending:false}); if(r.error){console.warn("Suivi des températures indisponible :",r.error.message);temperatureRecords=[];} else temperatureRecords=r.data||[];
  r=await client.from("checklist_submissions").select("*").order("checklist_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Historique des checklists indisponible :",r.error.message);checklistSubmissions=[];} else checklistSubmissions=r.data||[];
+ r=await client.from("boat_audits").select("*").order("audit_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Audit bateaux indisponible :",r.error.message);auditRecords=[];} else auditRecords=r.data||[];
 }
 function renderHome(){
  const html=`<div class="card"><div class="row"><div class="grow"><h2 style="margin:0">Les 5 bateaux</h2><p class="muted">Technique disponible. Matin et Soir : à venir.</p></div><button onclick="showPage('history');renderChecklistHistory()">📋 Voir les checklists enregistrées</button></div></div><div class="grid">`+
@@ -445,6 +448,82 @@ async function deleteTemperatureRecord(id){
  await loadData();renderTemperatures();
 }
 
+
+const AUDIT_BOATS=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile"];
+let auditBoatFilter="",auditCategoryFilter="",auditDateFilter="";
+function auditCategoryLabel(v){return v==="cosmetique"?"Cosmétique":"Technique"}
+function auditSpeech(id){
+ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!SR){alert("La saisie vocale n'est pas disponible sur ce navigateur. Vous pouvez utiliser le clavier.");return}
+ const btn=document.getElementById("auditMic-"+id); const ta=document.getElementById("auditComment-"+id); if(!ta)return;
+ const r=new SR(); r.lang="fr-FR"; r.interimResults=false; r.continuous=false;
+ if(btn)btn.textContent="🎙️ Écoute…";
+ r.onresult=e=>{const txt=e.results?.[0]?.[0]?.transcript||"";ta.value=(ta.value?ta.value.trim()+" ":"")+txt};
+ r.onerror=e=>{alert("La saisie vocale n'a pas pu être utilisée : "+(e.error||"erreur"))};
+ r.onend=()=>{if(btn)btn.textContent="🎙️ Micro"};
+ r.start();
+}
+function auditPhotoPreview(input){
+ const f=input.files?.[0]; const out=document.getElementById("auditPhotoPreview"); if(!out)return;
+ if(!f){out.innerHTML="";return} const url=URL.createObjectURL(f); out.innerHTML=`<img src="${url}" style="max-width:180px;max-height:130px;border-radius:10px;object-fit:cover">`;
+}
+function renderAudits(){
+ const filtered=auditRecords.filter(x=>(!auditBoatFilter||x.boat_name===auditBoatFilter)&&(!auditCategoryFilter||x.category===auditCategoryFilter)&&(!auditDateFilter||x.audit_date===auditDateFilter));
+ const latest=AUDIT_BOATS.map(name=>{const x=auditRecords.find(r=>r.boat_name===name);return `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0">⚓ ${esc(name)}</h3><div class="small">Dernier audit : ${x?esc(x.audit_date):"Aucun audit enregistré"}</div></div><button onclick="openAuditForm('${name}')">＋ Nouvel audit</button></div></div>`}).join("");
+ const form=`<div class="card hidden" id="auditFormCard"><div class="row"><div class="grow"><h2 style="margin:0">🔎 Nouvel audit bateau</h2></div><button class="secondary" onclick="closeAuditForm()">Fermer</button></div><div class="levelgrid"><div><label>Bateau</label><select id="auditBoat">${AUDIT_BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div><div><label>Date de visite</label><input id="auditDate" type="date" value="${isoDate(new Date())}"></div><div><label>Type de visite</label><select id="auditCategory"><option value="cosmetique">Cosmétique</option><option value="technique">Technique</option></select></div><div><label>Point / zone contrôlé(e)</label><input id="auditPoint" placeholder="Ex. Pont, salon, machine, timonerie…"></div></div><label>Commentaire / constat</label><textarea id="auditComment" rows="5" placeholder="Saisir au clavier ou utiliser le micro"></textarea><div class="row" style="margin-top:7px"><button class="secondary" id="auditMic-new" onclick="auditSpeech('new')">🎙️ Micro</button><label style="margin:0;display:inline-flex;align-items:center;gap:8px;font-weight:700"><input id="auditPhoto" type="file" accept="image/*" capture="environment" onchange="auditPhotoPreview(this)" style="width:auto">📷 Prendre une photo</label></div><div id="auditPhotoPreview" style="margin-top:8px"></div><div style="margin-top:12px"><button onclick="saveAudit()">✓ Enregistrer l'audit</button></div><p class="small">Un audit peut être réalisé régulièrement. Chaque constat est conservé dans l'historique et peut ensuite être transformé en tâche du planning.</p></div>`;
+ const history=`<div class="card"><div class="row"><div class="grow"><h2 style="margin:0">Historique des audits</h2><div class="small">${filtered.length} constat(s) affiché(s)</div></div><button class="secondary" onclick="exportAuditsPDF()">🖨️ Exporter / imprimer en PDF</button></div><div class="row" style="margin-top:10px"><div class="grow"><label>Bateau</label><select onchange="auditBoatFilter=this.value;renderAudits()"><option value="">Tous les bateaux</option>${AUDIT_BOATS.map(b=>`<option value="${esc(b)}" ${auditBoatFilter===b?"selected":""}>${esc(b)}</option>`).join("")}</select></div><div class="grow"><label>Type</label><select onchange="auditCategoryFilter=this.value;renderAudits()"><option value="">Cosmétique + Technique</option><option value="cosmetique" ${auditCategoryFilter==="cosmetique"?"selected":""}>Cosmétique</option><option value="technique" ${auditCategoryFilter==="technique"?"selected":""}>Technique</option></select></div><div class="grow"><label>Date</label><input type="date" value="${esc(auditDateFilter)}" onchange="auditDateFilter=this.value;renderAudits()"></div><div style="align-self:end"><button class="secondary" onclick="auditBoatFilter='';auditCategoryFilter='';auditDateFilter='';renderAudits()">Réinitialiser</button></div></div></div>`+
+ (filtered.length?filtered.map(x=>`<div class="card"><div class="row"><div class="grow"><h3 style="margin:0">${esc(x.boat_name)} — ${esc(auditCategoryLabel(x.category))}</h3><div class="small">📅 ${esc(x.audit_date)} · ${new Date(x.created_at).toLocaleString("fr-FR")}</div></div><span class="pill ${x.task_created?"ok":"warn"}">${x.task_created?"✓ Tâche créée":"À traiter"}</span></div><p><b>Point / zone :</b> ${esc(x.point||"Non renseigné")}</p><p style="white-space:pre-wrap">${esc(x.comment||"Aucun commentaire")}</p>${x.photo_url?`<p>📷 <a href="${esc(x.photo_url)}" target="_blank" rel="noopener">Voir la photo</a></p>`:""}<div class="row">${x.task_created?"":`<button onclick="scheduleAuditTask('${x.id}')">📅 Distribuer au planning</button>`}${profile?.role==="admin"?`<button class="secondary" onclick="editAudit('${x.id}')">✎ Modifier</button><button class="danger" onclick="deleteAudit('${x.id}')">🗑 Supprimer</button>`:""}</div></div>`).join(""):`<div class="card"><p class="muted">Aucun audit correspondant aux filtres.</p></div>`);
+ document.getElementById("page-audits").innerHTML=`<div class="card"><div class="row"><div class="grow"><h2 style="margin:0">🔎 Audit bateaux</h2><p class="muted">Visites régulières cosmétique et technique des 5 bateaux, avec photo et commentaire texte ou vocal.</p></div><button onclick="openAuditForm()">＋ Nouvel audit</button></div></div>`+latest+form+history;
+}
+function openAuditForm(boat){document.getElementById("auditFormCard")?.classList.remove("hidden");if(boat&&document.getElementById("auditBoat"))document.getElementById("auditBoat").value=boat;document.getElementById("auditFormCard")?.scrollIntoView({behavior:"smooth",block:"start"})}
+function closeAuditForm(){document.getElementById("auditFormCard")?.classList.add("hidden")}
+async function saveAudit(){
+ const boat=document.getElementById("auditBoat")?.value||"",date=document.getElementById("auditDate")?.value||isoDate(new Date()),category=document.getElementById("auditCategory")?.value||"cosmetique",point=document.getElementById("auditPoint")?.value.trim()||"",comment=document.getElementById("auditComment")?.value.trim()||"";
+ if(!boat||!date||!point){alert("Bateau, date et point / zone sont obligatoires.");return}
+ let photo_url=null; const file=document.getElementById("auditPhoto")?.files?.[0];
+ const tempId=crypto.randomUUID?crypto.randomUUID():String(Date.now());
+ if(file){const safe=(file.name||"photo.jpg").replace(/[^a-zA-Z0-9._-]/g,"_");const path=`audits/${date}/${tempId}_${safe}`;const up=await client.storage.from("audit-photos").upload(path,file,{upsert:false,contentType:file.type||"image/jpeg"});if(up.error){alert("Impossible d'enregistrer la photo : "+up.error.message);return}photo_url=client.storage.from("audit-photos").getPublicUrl(path).data.publicUrl}
+ const {error}=await client.from("boat_audits").insert({boat_name:boat,audit_date:date,category,point,comment,photo_url,created_by:profile?.id||null});
+ if(error){alert("Impossible d'enregistrer l'audit : "+error.message);return}
+ await loadData();renderAudits();alert("✓ Audit enregistré.");
+}
+async function scheduleAuditTask(id){
+ const x=auditRecords.find(r=>r.id===id);if(!x)return;
+ const date=prompt("Date de la tâche à créer dans le planning :",x.audit_date);if(date===null||!/^\d{4}-\d{2}-\d{2}$/.test(date))return;
+ const operator=prompt("Opérateur (facultatif) :","");if(operator===null)return;
+ const task=`Audit bateaux — ${auditCategoryLabel(x.category)} — ${x.point}${x.comment?" — "+x.comment:""}`;
+ const {data,error}=await client.from("tasks").insert({task_date:date,boat_name:x.boat_name,operator_name:operator.trim()||null,task,status:"todo"}).select("id").single();
+ if(error){alert("Impossible de créer la tâche : "+error.message);return}
+ const up=await client.rpc("mark_boat_audit_task_created",{p_id:id});if(up.error){alert("La tâche a été créée mais le statut de l'audit n'a pas pu être mis à jour : "+up.error.message);return}
+ await loadData();renderAudits();alert("✓ Tâche ajoutée au planning.");
+}
+async function editAudit(id){
+ if(profile?.role!=="admin"){alert("Seul un administrateur peut modifier un audit.");return}
+ const x=auditRecords.find(r=>r.id===id);if(!x)return;
+ const date=prompt("Date de visite (AAAA-MM-JJ) :",x.audit_date||"");if(date===null)return;
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){alert("Date invalide.");return}
+ const category=prompt("Type de visite (cosmetique ou technique) :",x.category||"cosmetique");if(category===null)return;
+ const cat=category.trim().toLowerCase();if(!["cosmetique","technique"].includes(cat)){alert("Type invalide : indiquez cosmetique ou technique.");return}
+ const point=prompt("Point / zone contrôlé(e) :",x.point||"");if(point===null)return;if(!point.trim()){alert("Le point / zone est obligatoire.");return}
+ const comment=prompt("Commentaire / constat :",x.comment||"");if(comment===null)return;
+ const {error}=await client.from("boat_audits").update({audit_date:date,category:cat,point:point.trim(),comment:comment.trim()}).eq("id",id);
+ if(error){alert("Impossible de modifier l'audit : "+error.message);return}
+ await loadData();renderAudits();alert("✓ Audit modifié. La photo existante est conservée.");
+}
+async function deleteAudit(id){
+ if(profile?.role!=="admin"){alert("Seul un administrateur peut supprimer un audit.");return}
+ if(!confirm("Supprimer définitivement cet audit ?"))return;
+ const {error}=await client.from("boat_audits").delete().eq("id",id);
+ if(error){alert("Impossible de supprimer l'audit : "+error.message);return}
+ await loadData();renderAudits();
+}
+function exportAuditsPDF(){
+ const filtered=auditRecords.filter(x=>(!auditBoatFilter||x.boat_name===auditBoatFilter)&&(!auditCategoryFilter||x.category===auditCategoryFilter)&&(!auditDateFilter||x.audit_date===auditDateFilter));
+ if(!filtered.length){alert("Aucun audit à exporter avec les filtres actuels.");return}
+ const title=`Audit bateaux${auditBoatFilter?" — "+auditBoatFilter:""}`;
+ const w=window.open("","_blank");if(!w){alert("Le navigateur a bloqué la fenêtre d'impression. Autorisez les fenêtres pop-up pour cette application.");return}
+ w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;margin:28px;color:#111}h1{font-size:22px}h2{font-size:17px;margin-bottom:4px}.meta{color:#555;font-size:12px}.audit{border:1px solid #bbb;border-radius:8px;padding:12px;margin:12px 0;break-inside:avoid}.audit img{max-width:260px;max-height:190px;margin-top:8px;border-radius:6px}.comment{white-space:pre-wrap} @media print{button{display:none}}</style></head><body><h1>🔎 AUDIT BATEAUX</h1><div class="meta">Édition du ${new Date().toLocaleString("fr-FR")} · ${filtered.length} constat(s)</div>${filtered.map(x=>`<div class="audit"><h2>${esc(x.boat_name)} — ${esc(auditCategoryLabel(x.category))}</h2><div class="meta">Date : ${esc(x.audit_date)} · ${x.task_created?"Tâche planning créée":"Sans tâche planning"}</div><p><b>Point / zone :</b> ${esc(x.point||"Non renseigné")}</p><div class="comment"><b>Commentaire :</b> ${esc(x.comment||"Aucun commentaire")}</div>${x.photo_url?`<img src="${esc(x.photo_url)}">`:""}</div>`).join("")}<script>window.onload=()=>setTimeout(()=>window.print(),400)<\/script></body></html>`);w.document.close();
+}
 function renderChecklist(){
  const b=currentBoat;
  const tech=checklistTechName||"";
@@ -543,11 +622,11 @@ async function adminMove(id,dir){
  let list=items.filter(i=>i.boat_id===items.find(x=>x.id===id).boat_id).sort((a,b)=>a.position-b.position),idx=list.findIndex(x=>x.id===id),j=idx+dir;if(j<0||j>=list.length)return;
  let a=list[idx],b=list[j];await client.from("checklist_items").update({position:b.position}).eq("id",a.id);await client.from("checklist_items").update({position:a.position}).eq("id",b.id);await refresh();renderAdmin()
 }
-async function refresh(){await loadData();renderHome();renderAdmin();renderChecklistHistory();if(!document.getElementById("page-levels").classList.contains("hidden"))renderLevels();if(!document.getElementById("page-temperatures").classList.contains("hidden"))renderTemperatures()}
-document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="history")renderChecklistHistory();if(b.dataset.page==="temperatures")renderTemperatures();if(b.dataset.page==="admin")renderAdmin()});
+async function refresh(){await loadData();renderHome();renderAdmin();renderChecklistHistory();if(!document.getElementById("page-levels").classList.contains("hidden"))renderLevels();if(!document.getElementById("page-temperatures").classList.contains("hidden"))renderTemperatures();if(!document.getElementById("page-audits").classList.contains("hidden"))renderAudits()}
+document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="history")renderChecklistHistory();if(b.dataset.page==="temperatures")renderTemperatures();if(b.dataset.page==="audits")renderAudits();if(b.dataset.page==="admin")renderAdmin()});
 document.getElementById("loginBtn").onclick=async()=>{let e=loginEmail.value.trim(),p=loginPassword.value;setMsg("loginMsg","Connexion…");let r=await client.auth.signInWithPassword({email:e,password:p});if(r.error)setMsg("loginMsg",r.error.message,true);else startApp()};
 document.getElementById("logoutBtn").onclick=async()=>{await client.auth.signOut();location.reload()};
-async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderLevels();renderTemperatures();renderChecklistHistory();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
+async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderLevels();renderTemperatures();renderChecklistHistory();renderAudits();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
 client.auth.onAuthStateChange((_event,session)=>{if(session&&!profile)startApp()});
 (async()=>{const {data:{session}}=await client.auth.getSession();if(session)startApp()})();
 </script>

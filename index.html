@@ -110,6 +110,7 @@ const ETOILE=[
 "Alimentations 24 V"
 ];
 let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],checklistSubmissions=[],auditRecords=[];
+let checklistGeneralComment="";
 let currentBoat=null,currentItems=[],answers={},photos={},checklistTechName="",checklistDate="";
 let calDate=new Date(); let selectedDate=isoDate(new Date());
 
@@ -464,31 +465,31 @@ function auditSpeech(id){
  r.onend=()=>{if(btn)btn.textContent="🎙️ Micro"};
  r.start();
 }
-function auditPhotoPreview(input){
- const f=input.files?.[0]; const out=document.getElementById("auditPhotoPreview");if(!out)return;
- if(!f){out.innerHTML="";return} const url=URL.createObjectURL(f);out.innerHTML=`<img src="${url}" style="max-width:180px;max-height:130px;border-radius:10px;object-fit:cover">`;
+function auditPhotoPreview(input,id){
+ const files=[...(input.files||[])]; const out=document.getElementById("auditPhotoPreview-"+id);if(!out)return;
+ out.innerHTML=files.map((f,i)=>{const url=URL.createObjectURL(f);return `<img src="${url}" style="max-width:140px;max-height:100px;border-radius:10px;object-fit:cover;margin:4px">`}).join("");
 }
 function normalizeAuditZones(x){
- if(Array.isArray(x?.zones)&&x.zones.length)return x.zones.map((z,i)=>({id:"z"+i,point:String(z.point||""),comment:String(z.comment||"")}));
- return [{id:"z0",point:String(x?.point||""),comment:String(x?.comment||"")}];
+ if(Array.isArray(x?.zones)&&x.zones.length)return x.zones.map((z,i)=>({id:"z"+i,point:String(z.point||""),comment:String(z.comment||""),photo_urls:Array.isArray(z.photo_urls)?z.photo_urls.filter(Boolean):[]}));
+ return [{id:"z0",point:String(x?.point||""),comment:String(x?.comment||""),photo_urls:x?.photo_url?[x.photo_url]:[]}];
 }
 function renderAuditZones(){
  const out=document.getElementById("auditZones");if(!out)return;
- out.innerHTML=auditZones.map((z,i)=>`<div class="item" style="margin-top:10px"><div class="row"><div class="grow"><b>Zone ${i+1}</b></div>${auditZones.length>1?`<button class="danger" onclick="removeAuditZone('${z.id}')">Supprimer</button>`:""}</div><label>Zone / point contrôlé(e)</label><input id="auditPoint-${z.id}" value="${esc(z.point)}" placeholder="Ex. Pont, salon, machine, timonerie…" oninput="updateAuditZone('${z.id}','point',this.value)"><label>Commentaire / constat</label><textarea id="auditComment-${z.id}" rows="4" placeholder="Saisir au clavier ou utiliser le micro" oninput="updateAuditZone('${z.id}','comment',this.value)">${esc(z.comment)}</textarea><button class="secondary" id="auditMic-${z.id}" onclick="auditSpeech('${z.id}')">🎙️ Micro</button></div>`).join("");
+ out.innerHTML=auditZones.map((z,i)=>`<div class="item" style="margin-top:10px"><div class="row"><div class="grow"><b>Zone ${i+1}</b></div>${auditZones.length>1?`<button class="danger" onclick="removeAuditZone('${z.id}')">Supprimer</button>`:""}</div><label>Zone / point contrôlé(e)</label><input id="auditPoint-${z.id}" value="${esc(z.point)}" placeholder="Ex. Pont, salon, machine, timonerie…" oninput="updateAuditZone('${z.id}','point',this.value)"><label>Commentaire / constat</label><textarea id="auditComment-${z.id}" rows="4" placeholder="Saisir au clavier ou utiliser le micro" oninput="updateAuditZone('${z.id}','comment',this.value)">${esc(z.comment)}</textarea><button class="secondary" id="auditMic-${z.id}" onclick="auditSpeech('${z.id}')">🎙️ Micro</button><label style="margin-top:8px">Photo(s) de cette zone / ce commentaire (facultatif)</label><input id="auditPhoto-${z.id}" type="file" accept="image/*" capture="environment" multiple onchange="auditPhotoPreview(this,'${z.id}')"><div id="auditPhotoPreview-${z.id}" style="margin-top:8px">${(z.photo_urls||[]).map((u,j)=>`<span style="display:inline-block;margin:4px"><a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" style="max-width:140px;max-height:100px;border-radius:10px;object-fit:cover"></a><br><span class="small">Photo ${j+1}</span></span>`).join("")}</div></div>`).join("");
 }
 function updateAuditZone(id,key,value){const z=auditZones.find(v=>v.id===id);if(z)z[key]=value}
-function addAuditZone(){auditZones.push({id:"z"+Date.now()+""+Math.random().toString(36).slice(2),point:"",comment:""});renderAuditZones();document.getElementById("auditZones")?.lastElementChild?.scrollIntoView({behavior:"smooth",block:"center"})}
+function addAuditZone(){auditZones.push({id:"z"+Date.now()+""+Math.random().toString(36).slice(2),point:"",comment:"",photo_urls:[]});renderAuditZones();document.getElementById("auditZones")?.lastElementChild?.scrollIntoView({behavior:"smooth",block:"center"})}
 function removeAuditZone(id){auditZones=auditZones.filter(z=>z.id!==id);if(!auditZones.length)addAuditZone();else renderAuditZones()}
 function renderAudits(){
  const filtered=auditRecords.filter(x=>(!auditBoatFilter||x.boat_name===auditBoatFilter)&&(!auditDateFilter||x.audit_date===auditDateFilter));
  const latest=AUDIT_BOATS.map(name=>{const x=auditRecords.find(r=>r.boat_name===name);return `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0">⚓ ${esc(name)}</h3><div class="small">Dernier audit : ${x?esc(x.audit_date):"Aucun audit enregistré"}</div></div><button onclick="openAuditForm('${name}')">＋ Nouvel audit</button></div></div>`}).join("");
- const form=`<div class="card hidden" id="auditFormCard"><div class="row"><div class="grow"><h2 id="auditFormTitle" style="margin:0">🔎 Nouvel audit bateau</h2></div><button class="secondary" onclick="closeAuditForm()">Fermer</button></div><div class="levelgrid"><div><label>Bateau</label><select id="auditBoat">${AUDIT_BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div><div><label>Date de visite</label><input id="auditDate" type="date" value="${isoDate(new Date())}"></div><div><label>Type de visite</label><input value="Cosmétique / Technique" disabled></div></div><div class="card" style="margin:12px 0 0;padding:12px;background:#f8fafc"><div class="row"><div class="grow"><h3 style="margin:0">Zones contrôlées</h3><div class="small">Ajoutez autant de zones que nécessaire. Chaque zone possède son propre commentaire, saisissable au clavier ou au micro.</div></div><button class="secondary" onclick="addAuditZone()">＋ Ajouter une zone</button></div><div id="auditZones"></div></div><div style="margin-top:12px"><label>Photo de l'audit (facultative)</label><input id="auditPhoto" type="file" accept="image/*" capture="environment" onchange="auditPhotoPreview(this)"><div id="auditPhotoPreview" style="margin-top:8px"></div></div><div style="margin-top:12px"><button onclick="saveAudit()">✓ Enregistrer l'audit</button></div><p class="small">Un seul audit peut maintenant contenir plusieurs zones contrôlées et un commentaire pour chacune.</p></div>`;
+ const form=`<div class="card hidden" id="auditFormCard"><div class="row"><div class="grow"><h2 id="auditFormTitle" style="margin:0">🔎 Nouvel audit bateau</h2></div><button class="secondary" onclick="closeAuditForm()">Fermer</button></div><div class="levelgrid"><div><label>Bateau</label><select id="auditBoat">${AUDIT_BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div><div><label>Date de visite</label><input id="auditDate" type="date" value="${isoDate(new Date())}"></div><div><label>Type de visite</label><input value="Cosmétique / Technique" disabled></div></div><div class="card" style="margin:12px 0 0;padding:12px;background:#f8fafc"><div class="row"><div class="grow"><h3 style="margin:0">Zones contrôlées</h3><div class="small">Ajoutez autant de zones que nécessaire. Chaque zone possède son propre commentaire, saisissable au clavier ou au micro.</div></div><button class="secondary" onclick="addAuditZone()">＋ Ajouter une zone</button></div><div id="auditZones"></div></div><div style="margin-top:12px"><button onclick="saveAudit()">✓ Enregistrer l'audit</button></div><p class="small">Un seul audit peut maintenant contenir plusieurs zones contrôlées et un commentaire pour chacune.</p></div>`;
  const history=`<div class="card"><div class="row"><div class="grow"><h2 style="margin:0">Historique des audits</h2><div class="small">${filtered.length} audit(s) affiché(s)</div></div><button class="secondary" onclick="exportAuditsPDF()">🖨️ Exporter / imprimer en PDF</button></div><div class="row" style="margin-top:10px"><div class="grow"><label>Bateau</label><select onchange="auditBoatFilter=this.value;renderAudits()"><option value="">Tous les bateaux</option>${AUDIT_BOATS.map(b=>`<option value="${esc(b)}" ${auditBoatFilter===b?"selected":""}>${esc(b)}</option>`).join("")}</select></div><div class="grow"><label>Date</label><input type="date" value="${esc(auditDateFilter)}" onchange="auditDateFilter=this.value;renderAudits()"></div><div style="align-self:end"><button class="secondary" onclick="auditBoatFilter='';auditDateFilter='';renderAudits()">Réinitialiser</button></div></div></div>`+
- (filtered.length?filtered.map(x=>{const zones=normalizeAuditZones(x);return `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0">${esc(x.boat_name)} — ${auditCategoryLabel()}</h3><div class="small">📅 ${esc(x.audit_date)} · ${new Date(x.created_at).toLocaleString("fr-FR")}</div></div><span class="pill ${x.task_created?"ok":"warn"}">${x.task_created?"✓ Tâche créée":"À traiter"}</span></div><div>${zones.map((z,i)=>`<div class="item" style="margin-top:8px"><b>Zone ${i+1} — ${esc(z.point||"Non renseignée")}</b><p style="white-space:pre-wrap;margin-bottom:0">${esc(z.comment||"Aucun commentaire")}</p></div>`).join("")}</div>${x.photo_url?`<p>📷 <a href="${esc(x.photo_url)}" target="_blank" rel="noopener">Voir la photo</a></p>`:""}<div class="row">${x.task_created?"":`<button onclick="scheduleAuditTask('${x.id}')">📅 Distribuer au planning</button>`}${profile?.role==="admin"?`<button class="secondary" onclick="editAudit('${x.id}')">✎ Modifier</button><button class="danger" onclick="deleteAudit('${x.id}')">🗑 Supprimer</button>`:""}</div></div>`}).join(""):`<div class="card"><p class="muted">Aucun audit correspondant aux filtres.</p></div>`);
+ (filtered.length?filtered.map(x=>{const zones=normalizeAuditZones(x);return `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0">${esc(x.boat_name)} — ${auditCategoryLabel()}</h3><div class="small">📅 ${esc(x.audit_date)} · ${new Date(x.created_at).toLocaleString("fr-FR")}</div></div><span class="pill ${x.task_created?"ok":"warn"}">${x.task_created?"✓ Tâche créée":"À traiter"}</span></div><div>${zones.map((z,i)=>`<div class="item" style="margin-top:8px"><b>Zone ${i+1} — ${esc(z.point||"Non renseignée")}</b><p style="white-space:pre-wrap;margin-bottom:0">${esc(z.comment||"Aucun commentaire")}</p>${(z.photo_urls||[]).map((u,j)=>`<div style="margin-top:6px">📷 <a href="${esc(u)}" target="_blank" rel="noopener">Voir la photo ${j+1}</a></div>`).join("")}</div>`).join("")}</div><div class="row">${x.task_created?"":`<button onclick="scheduleAuditTask('${x.id}')">📅 Distribuer au planning</button>`}${profile?.role==="admin"?`<button class="secondary" onclick="editAudit('${x.id}')">✎ Modifier</button><button class="danger" onclick="deleteAudit('${x.id}')">🗑 Supprimer</button>`:""}</div></div>`}).join(""):`<div class="card"><p class="muted">Aucun audit correspondant aux filtres.</p></div>`);
  document.getElementById("page-audits").innerHTML=`<div class="card"><div class="row"><div class="grow"><h2 style="margin:0">🔎 Audit bateaux</h2><p class="muted">Visites régulières <b>Cosmétique / Technique</b> des 5 bateaux, avec plusieurs zones contrôlées, commentaire par zone et photo facultative.</p></div><button onclick="openAuditForm()">＋ Nouvel audit</button></div></div>`+latest+form+history;
 }
 function openAuditForm(boat){
- editingAuditId=null;auditZones=[{id:"z"+Date.now(),point:"",comment:""}];
+ editingAuditId=null;auditZones=[{id:"z"+Date.now(),point:"",comment:"",photo_urls:[]}];
  document.getElementById("auditFormCard")?.classList.remove("hidden");
  document.getElementById("auditFormTitle").textContent="🔎 Nouvel audit bateau";
  if(boat&&document.getElementById("auditBoat"))document.getElementById("auditBoat").value=boat;
@@ -497,12 +498,22 @@ function openAuditForm(boat){
 function closeAuditForm(){document.getElementById("auditFormCard")?.classList.add("hidden");editingAuditId=null}
 async function saveAudit(){
  const boat=document.getElementById("auditBoat")?.value||"",date=document.getElementById("auditDate")?.value||isoDate(new Date());
- const zones=auditZones.map(z=>({point:String(z.point||"").trim(),comment:String(z.comment||"").trim()})).filter(z=>z.point||z.comment);
+ const zones=auditZones.map(z=>({id:z.id,point:String(z.point||"").trim(),comment:String(z.comment||"").trim(),photo_urls:Array.isArray(z.photo_urls)?z.photo_urls.filter(Boolean):[]})).filter(z=>z.point||z.comment||z.photo_urls.length);
  if(!boat||!date||!zones.length||zones.some(z=>!z.point)){alert("Bateau, date et au moins une zone avec son nom sont obligatoires.");return}
- let photo_url=editingAuditId?(auditRecords.find(x=>x.id===editingAuditId)?.photo_url||null):null;
- const file=document.getElementById("auditPhoto")?.files?.[0];const tempId=crypto.randomUUID?crypto.randomUUID():String(Date.now());
- if(file){const safe=(file.name||"photo.jpg").replace(/[^a-zA-Z0-9._-]/g,"_");const path=`audits/${date}/${tempId}_${safe}`;const up=await client.storage.from("audit-photos").upload(path,file,{upsert:false,contentType:file.type||"image/jpeg"});if(up.error){alert("Impossible d'enregistrer la photo : "+up.error.message);return}photo_url=client.storage.from("audit-photos").getPublicUrl(path).data.publicUrl}
- const row={boat_name:boat,audit_date:date,category:AUDIT_CATEGORY,point:zones[0].point,comment:zones[0].comment,photo_url,zones};
+ const tempId=crypto.randomUUID?crypto.randomUUID():String(Date.now());
+ for(let i=0;i<zones.length;i++){
+   const input=document.getElementById("auditPhoto-"+auditZones[i]?.id);
+   const files=[...(input?.files||[])];
+   for(let n=0;n<files.length;n++){
+     const f=files[n],safe=(f.name||"photo.jpg").replace(/[^a-zA-Z0-9._-]/g,"_");
+     const path=`audits/${date}/${tempId}_${i}_${n}_${safe}`;
+     const up=await client.storage.from("audit-photos").upload(path,f,{upsert:false,contentType:f.type||"image/jpeg"});
+     if(up.error){alert("Impossible d'enregistrer une photo : "+up.error.message);return}
+     zones[i].photo_urls.push(client.storage.from("audit-photos").getPublicUrl(path).data.publicUrl);
+   }
+ }
+ const legacyPhoto=zones[0]?.photo_urls?.[0]||null;
+ const row={boat_name:boat,audit_date:date,category:AUDIT_CATEGORY,point:zones[0].point,comment:zones[0].comment,photo_url:legacyPhoto,zones:zones.map(({id,...z})=>z)};
  let result;
  if(editingAuditId) result=await client.from("boat_audits").update(row).eq("id",editingAuditId); else result=await client.from("boat_audits").insert({...row,created_by:profile?.id||null});
  if(result.error){alert("Impossible d'enregistrer l'audit : "+result.error.message);return}
@@ -537,7 +548,7 @@ function exportAuditsPDF(){
  const filtered=auditRecords.filter(x=>(!auditBoatFilter||x.boat_name===auditBoatFilter)&&(!auditDateFilter||x.audit_date===auditDateFilter));
  if(!filtered.length){alert("Aucun audit à exporter avec les filtres actuels.");return}
  const title=`Audit bateaux${auditBoatFilter?" — "+auditBoatFilter:""}`;const w=window.open("","_blank");if(!w){alert("Le navigateur a bloqué la fenêtre d'impression. Autorisez les fenêtres pop-up pour cette application.");return}
- w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;margin:28px;color:#111}h1{font-size:22px}h2{font-size:17px;margin-bottom:4px}.meta{color:#555;font-size:12px}.audit{border:1px solid #bbb;border-radius:8px;padding:12px;margin:12px 0;break-inside:avoid}.zone{border-top:1px solid #ddd;padding-top:7px;margin-top:7px}.audit img{max-width:260px;max-height:190px;margin-top:8px;border-radius:6px}.comment{white-space:pre-wrap}@media print{button{display:none}}</style></head><body><h1>🔎 AUDIT BATEAUX</h1><div class="meta">Édition du ${new Date().toLocaleString("fr-FR")} · ${filtered.length} audit(s)</div>${filtered.map(x=>`<div class="audit"><h2>${esc(x.boat_name)} — Cosmétique / Technique</h2><div class="meta">Date : ${esc(x.audit_date)} · ${x.task_created?"Tâche planning créée":"Sans tâche planning"}</div>${normalizeAuditZones(x).map((z,i)=>`<div class="zone"><b>Zone ${i+1} : ${esc(z.point||"Non renseignée")}</b><div class="comment"><b>Commentaire :</b> ${esc(z.comment||"Aucun commentaire")}</div></div>`).join("")}${x.photo_url?`<img src="${esc(x.photo_url)}">`:""}</div>`).join("")}<script>window.onload=()=>setTimeout(()=>window.print(),400)<\/script></body></html>`);w.document.close();
+ w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;margin:28px;color:#111}h1{font-size:22px}h2{font-size:17px;margin-bottom:4px}.meta{color:#555;font-size:12px}.audit{border:1px solid #bbb;border-radius:8px;padding:12px;margin:12px 0;break-inside:avoid}.zone{border-top:1px solid #ddd;padding-top:7px;margin-top:7px}.audit img{max-width:260px;max-height:190px;margin-top:8px;border-radius:6px}.comment{white-space:pre-wrap}@media print{button{display:none}}</style></head><body><h1>🔎 AUDIT BATEAUX</h1><div class="meta">Édition du ${new Date().toLocaleString("fr-FR")} · ${filtered.length} audit(s)</div>${filtered.map(x=>`<div class="audit"><h2>${esc(x.boat_name)} — Cosmétique / Technique</h2><div class="meta">Date : ${esc(x.audit_date)} · ${x.task_created?"Tâche planning créée":"Sans tâche planning"}</div>${normalizeAuditZones(x).map((z,i)=>`<div class="zone"><b>Zone ${i+1} : ${esc(z.point||"Non renseignée")}</b><div class="comment"><b>Commentaire :</b> ${esc(z.comment||"Aucun commentaire")}</div>${(z.photo_urls||[]).map(u=>`<img src="${esc(u)}">`).join("")}</div>`).join("")}</div>`).join("")}<script>window.onload=()=>setTimeout(()=>window.print(),400)<\/script></body></html>`);w.document.close();
 }
 function renderChecklist(){
  const b=currentBoat;
@@ -554,7 +565,7 @@ function addPhotos(id,files){answers[id]=answers[id]||{};answers[id].photos=answ
 async function validateChecklist(){
  const tech=(document.getElementById("techName")?.value||checklistTechName||"").trim();
  const date=document.getElementById("techDate")?.value||checklistDate||"";
- checklistTechName=tech; checklistDate=date;
+ checklistTechName=tech; checklistDate=date; checklistGeneralComment=document.getElementById("checklistGeneralComment")?.value||checklistGeneralComment;
  if(!tech||!date){alert("Nom du technicien et date obligatoires.");return}
  const missing=currentItems.filter(i=>!answers[i.id]?.status);
  if(missing.length){alert("Tous les points doivent être renseignés.");return}
@@ -588,7 +599,7 @@ async function validateChecklist(){
   alert('✓ Checklist validée et enregistrée. L’e-mail va s’ouvrir. À votre retour dans l’application, vous serez sur la liste des checklists.');
   // On quitte explicitement la checklist en cours avant d’ouvrir le mail :
   // ainsi, au retour depuis la messagerie, on ne retrouve pas la checklist déjà validée.
-  currentBoat=null; currentItems=[]; answers={}; photos={}; checklistTechName=""; checklistDate="";
+  currentBoat=null; currentItems=[]; answers={}; photos={}; checklistTechName=""; checklistDate=""; checklistGeneralComment="";
   renderHome();
   showPage("home");
   location.href=mailto;
@@ -621,7 +632,7 @@ function viewChecklistSubmission(id){
  const r=s.result||{},its=Array.isArray(r.items)?r.items:[],photos=Array.isArray(r.photo_links)?r.photo_links:[];
  document.getElementById("page-history").innerHTML=`<div class="card"><div class="row"><button class="secondary" onclick="renderChecklistHistory()">← Retour à l'historique</button><div class="grow"><h2 style="margin:0">📋 Checklist — ${esc(s.boat_name)}</h2></div></div><p><b>Date :</b> ${esc(s.checklist_date)}<br><b>Technicien :</b> ${esc(s.operator_name)}<br><b>Enregistrée le :</b> ${new Date(s.created_at).toLocaleString("fr-FR")}</p></div>`+
  `<div class="card"><h3>Résultats</h3>${its.map((it,n)=>`<div class="item"><div class="row"><div class="grow"><b>${n+1}. ${esc(it.title)}</b>${it.description?`<div class="small" style="margin-top:5px">${esc(it.description)}</div>`:""}</div><span class="pill ${it.status==="ok"?"ok":it.status==="anomaly"?"warn":""}">${it.status==="ok"?"✓ Conforme":it.status==="anomaly"?"⚠ Anomalie":"— N/A"}</span></div>${it.level_quantities&&Object.keys(it.level_quantities).some(k=>it.level_quantities[k])?`<div class="small" style="margin-top:5px">🛢️ ${Object.entries(it.level_quantities).filter(([k,v])=>v).map(([k,v])=>`${esc(k)} : ${esc(v)} L`).join(" · ")}</div>`:""}</div>`).join("")}</div>`+
- (photos.length?`<div class="card"><h3>📷 Photos</h3>${photos.map((x,i)=>`<div style="margin:7px 0"><a href="${esc(x.url)}" target="_blank" rel="noopener">Voir la photo ${i+1} — ${esc(x.title||"")}</a></div>`).join("")}</div>`:"");
+ (r.general_comment?`<div class="card"><h3>💬 Commentaire général</h3><p style="white-space:pre-wrap">${esc(r.general_comment)}</p></div>`:"")+(photos.length?`<div class="card"><h3>📷 Photos</h3>${photos.map((x,i)=>`<div style="margin:7px 0"><a href="${esc(x.url)}" target="_blank" rel="noopener">Voir la photo ${i+1} — ${esc(x.title||"")}</a></div>`).join("")}</div>`:"");
  showPage("history");
 }
 

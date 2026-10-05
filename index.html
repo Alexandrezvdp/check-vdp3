@@ -590,15 +590,24 @@ async function validateChecklist(){
   let body=`CHECK VDP — CHECKLIST TECHNIQUE\n\nBateau : ${currentBoat.name}\nDate : ${date}\nTechnicien : ${tech}\n\n`;
   if(!anomalies.length)body+="AUCUNE ANOMALIE CONSTATÉE.\n";else{body+="ANOMALIES :\n";anomalies.forEach((it,i)=>body+=`${i+1}. ${it.title}\n   ${answers[it.id].desc}\n`)}
   if(photoLinks.length){body+="\nPHOTOS :\n";photoLinks.forEach((x,i)=>body+=`${i+1}. ${x.title} — ${x.url}\n`)}else body+="\nAucune photo jointe.\n";
-  const submission={boat_name:currentBoat.name,checklist_date:date,operator_name:tech,result:{items:currentItems.map(it=>({id:it.id,title:it.title,status:answers[it.id]?.status||null,description:answers[it.id]?.desc||'',level_quantities:answers[it.id]?.levels||{}})),photo_links:photoLinks.map(x=>({title:x.title,url:x.url}))}};
+  if(checklistGeneralComment.trim())body+=`\nCOMMENTAIRE GÉNÉRAL :\n${checklistGeneralComment.trim()}\n`;
+  const submission={boat_name:currentBoat.name,checklist_date:date,operator_name:tech,result:{items:currentItems.map(it=>({id:it.id,title:it.title,status:answers[it.id]?.status||null,description:answers[it.id]?.desc||'',level_quantities:answers[it.id]?.levels||{}})),photo_links:photoLinks.map(x=>({title:x.title,url:x.url})),general_comment:checklistGeneralComment.trim()}};
   const saved=await client.from('checklist_submissions').insert(submission);
   if(saved.error)throw new Error('Enregistrement de la checklist : '+saved.error.message);
-  // La checklist est enregistrée dans Supabase avant l'ouverture de l'e-mail.
+
+  // Une checklist entièrement conforme est uniquement enregistrée : aucun e-mail n’est préparé.
+  if(!anomalies.length){
+   alert('✓ Checklist conforme enregistrée. Aucun e-mail n’a été préparé.');
+   currentBoat=null; currentItems=[]; answers={}; photos={}; checklistTechName=""; checklistDate=""; checklistGeneralComment="";
+   renderHome();
+   showPage("home");
+   return;
+  }
+
+  // En présence d’au moins une anomalie, la checklist est enregistrée puis l’e-mail est préparé.
   const subject=encodeURIComponent(`CHECK VDP — ${currentBoat.name} — ${date}`);
   const mailto=`mailto:${VDP_CONFIG.alertEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
-  alert('✓ Checklist validée et enregistrée. L’e-mail va s’ouvrir. À votre retour dans l’application, vous serez sur la liste des checklists.');
-  // On quitte explicitement la checklist en cours avant d’ouvrir le mail :
-  // ainsi, au retour depuis la messagerie, on ne retrouve pas la checklist déjà validée.
+  alert('✓ Checklist enregistrée avec anomalie. L’e-mail va s’ouvrir.');
   currentBoat=null; currentItems=[]; answers={}; photos={}; checklistTechName=""; checklistDate=""; checklistGeneralComment="";
   renderHome();
   showPage("home");

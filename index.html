@@ -57,6 +57,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <button data-page="calendar">📅 Planning</button>
 <button data-page="levels">🛢️ Suivi niveaux</button>
 <button data-page="temperatures">🌡️ Températures ligne d’arbre</button>
+<button data-page="inventory">🛢️ Inventaire Huile &amp; Graisse</button>
 <button data-page="history">📋 Checklists enregistrées</button>
 <button data-page="audits">🔎 Audit bateaux</button>
 <button data-page="admin" id="adminNav" class="hidden">⚙️ Administration</button>
@@ -67,6 +68,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <section id="page-calendar" class="hidden"></section>
 <section id="page-levels" class="hidden"></section>
 <section id="page-temperatures" class="hidden"></section>
+<section id="page-inventory" class="hidden"></section>
 <section id="page-history" class="hidden"></section>
 <section id="page-audits" class="hidden"></section>
 <section id="page-admin" class="hidden"></section>
@@ -109,7 +111,7 @@ const ETOILE=[
 "Vérification ventilateurs variateur moteur",
 "Alimentations 24 V"
 ];
-let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],checklistSubmissions=[],auditRecords=[];
+let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],inventoryCatalog=[],inventoryRecords=[],checklistSubmissions=[],auditRecords=[];
 let checklistGeneralComment="";
 let currentBoat=null,currentItems=[],answers={},photos={},checklistTechName="",checklistDate="";
 let calDate=new Date(); let selectedDate=isoDate(new Date());
@@ -132,6 +134,8 @@ async function loadData(){
  r=await client.from("tasks").select("*").order("task_date").order("created_at"); if(r.error)throw r.error; tasks=r.data||[];
  r=await client.from("level_records").select("*").order("created_at",{ascending:false}); if(r.error)throw r.error; levelRecords=r.data||[];
  r=await client.from("temperature_records").select("*").order("created_at",{ascending:false}); if(r.error){console.warn("Suivi des températures indisponible :",r.error.message);temperatureRecords=[];} else temperatureRecords=r.data||[];
+ r=await client.from("oil_grease_catalog").select("*").order("boat_name").order("position"); if(r.error){console.warn("Catalogue huile & graisse indisponible :",r.error.message);inventoryCatalog=[];} else inventoryCatalog=r.data||[];
+ r=await client.from("oil_grease_inventory_records").select("*").order("inventory_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Inventaire huile & graisse indisponible :",r.error.message);inventoryRecords=[];} else inventoryRecords=r.data||[];
  r=await client.from("checklist_submissions").select("*").order("checklist_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Historique des checklists indisponible :",r.error.message);checklistSubmissions=[];} else checklistSubmissions=r.data||[];
  r=await client.from("boat_audits").select("*").order("audit_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Audit bateaux indisponible :",r.error.message);auditRecords=[];} else auditRecords=r.data||[];
 }
@@ -450,6 +454,23 @@ async function deleteTemperatureRecord(id){
 }
 
 
+
+function inventoryCatalogForBoat(boatName){return inventoryCatalog.filter(x=>x.boat_name===boatName).sort((a,b)=>(a.position||0)-(b.position||0))}
+function inventoryLatestForBoat(boatName){return inventoryRecords.find(x=>x.boat_name===boatName)||null}
+function inventoryItemsMap(record){const m={};(record?.items||[]).forEach(x=>{m[x.catalog_id]=x.quantity});return m}
+function inventoryQty(v){return v===null||v===undefined||v===""?"—":esc(v)}
+function renderInventory(){
+ const invBoats=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile"];
+ const cards=invBoats.map(b=>{const x=inventoryLatestForBoat(b),m=inventoryItemsMap(x);const cat=inventoryCatalogForBoat(b);return `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0">⚓ ${esc(b)}</h3><div class="small">${x?`Dernier inventaire : ${esc(x.inventory_date)} · ${esc(x.operator_name||"Opérateur non renseigné")}`:`Aucun inventaire enregistré.`}</div></div>${x?`<button class="secondary" onclick="editInventoryRecord('${x.id}')">Modifier le dernier</button>`:""}</div><div style="overflow:auto;margin-top:10px"><table><thead><tr><th>Référence</th><th>Système</th><th>Unité</th><th>Quantité</th></tr></thead><tbody>${cat.map(i=>`<tr><td>${esc(i.reference)}</td><td>${esc(i.system||"—")}</td><td>${esc(i.unit||"—")}</td><td><b>${inventoryQty(m[i.id])}</b></td></tr>`).join("")}</tbody></table></div></div>`}).join("");
+ const history=`<div class="card"><h2>Historique des inventaires</h2>${inventoryRecords.length?`<div style="overflow:auto"><table><thead><tr><th>Date</th><th>Bateau</th><th>Opérateur</th><th>Nombre d'articles</th><th>Actions</th></tr></thead><tbody>${inventoryRecords.map(x=>`<tr><td>${esc(x.inventory_date)}</td><td>${esc(x.boat_name)}</td><td>${esc(x.operator_name||"—")}</td><td>${(x.items||[]).length}</td><td><div class="row"><button class="secondary" onclick="editInventoryRecord('${x.id}')">Modifier</button><button class="danger" onclick="deleteInventoryRecord('${x.id}')">Supprimer</button></div></td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Aucun inventaire enregistré.</p>`}</div>`;
+ document.getElementById("page-inventory").innerHTML=`<div class="card"><h2>🛢️ Inventaire Huile &amp; Graisse</h2><p class="muted">Les références, systèmes et unités proviennent du fichier d'inventaire. Seule la quantité est modifiée à chaque inventaire.</p></div>`+cards+`<div class="card"><h2>＋ Nouvel inventaire</h2><div class="grid"><div><label>Bateau</label><select id="inventoryBoat" onchange="renderInventoryForm()"><option value="">— Choisir un bateau —</option>${invBoats.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join("")}</select></div><div><label>Date de l'inventaire</label><input id="inventoryDate" type="date" value="${isoDate(new Date())}"></div><div><label>Nom de l'opérateur <span class="muted">(facultatif)</span></label><input id="inventoryOperator" placeholder="Nom et prénom"></div></div><div id="inventoryFormRows" style="margin-top:12px"></div><div style="margin-top:10px"><button onclick="saveInventoryRecord()">✓ Enregistrer l'inventaire</button></div></div>`+history;
+}
+function renderInventoryForm(){const boat=document.getElementById("inventoryBoat")?.value||"",wrap=document.getElementById("inventoryFormRows");if(!wrap)return;if(!boat){wrap.innerHTML='<p class="muted">Choisissez un bateau pour afficher les références.</p>';return}const cat=inventoryCatalogForBoat(boat);wrap.innerHTML=`<div style="overflow:auto"><table><thead><tr><th>Référence</th><th>Système</th><th>Unité</th><th>Quantité</th></tr></thead><tbody>${cat.map(i=>`<tr><td>${esc(i.reference)}</td><td>${esc(i.system||"—")}</td><td>${esc(i.unit||"—")}</td><td><input id="invqty-${i.id}" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0"></td></tr>`).join("")}</tbody></table></div>`}
+function readInventoryRows(boat){return inventoryCatalogForBoat(boat).map(i=>{const el=document.getElementById(`invqty-${i.id}`);const raw=el?.value.trim()??"";if(raw==="")return {catalog_id:i.id,reference:i.reference,system:i.system||"",unit:i.unit||"",quantity:null};const n=Number(raw.replace(",","."));return {catalog_id:i.id,reference:i.reference,system:i.system||"",unit:i.unit||"",quantity:Number.isFinite(n)&&n>=0?n:null}})}
+async function saveInventoryRecord(){const boat=document.getElementById("inventoryBoat")?.value||"",date=document.getElementById("inventoryDate")?.value||"",operator=document.getElementById("inventoryOperator")?.value.trim()||null;if(!boat||!date){alert("Bateau et date obligatoires.");return}const items=readInventoryRows(boat);if(items.some(x=>x.quantity===null)){if(!confirm("Certaines quantités sont vides. Enregistrer quand même ?"))return}const {error}=await client.from("oil_grease_inventory_records").insert({boat_name:boat,inventory_date:date,operator_name:operator,items});if(error){alert("Impossible d'enregistrer l'inventaire : "+error.message);return}await loadData();renderInventory();alert("✓ Inventaire enregistré.")}
+async function editInventoryRecord(id){const x=inventoryRecords.find(r=>r.id===id);if(!x)return;const cat=inventoryCatalogForBoat(x.boat_name),m=inventoryItemsMap(x);const date=prompt("Date de l'inventaire :",x.inventory_date||"");if(date===null)return;const operator=prompt("Nom de l'opérateur (laisser vide si non renseigné) :",x.operator_name||"");if(operator===null)return;const items=[];for(const i of cat){const v=prompt(`${i.reference} — ${i.unit||""}\nQuantité :`,m[i.id]===null||m[i.id]===undefined?"":String(m[i.id]));if(v===null)return;if(v.trim()===""){items.push({catalog_id:i.id,reference:i.reference,system:i.system||"",unit:i.unit||"",quantity:null});continue}const n=Number(v.replace(",","."));if(!Number.isFinite(n)||n<0){alert("Quantité invalide pour : "+i.reference);return}items.push({catalog_id:i.id,reference:i.reference,system:i.system||"",unit:i.unit||"",quantity:n})}const {error}=await client.from("oil_grease_inventory_records").update({inventory_date:date.trim(),operator_name:operator.trim()||null,items}).eq("id",id);if(error){alert("Impossible de modifier l'inventaire : "+error.message);return}await loadData();renderInventory();alert("✓ Inventaire modifié.")}
+async function deleteInventoryRecord(id){if(!confirm("Supprimer définitivement cet inventaire ?"))return;const {error}=await client.from("oil_grease_inventory_records").delete().eq("id",id);if(error){alert("Impossible de supprimer l'inventaire : "+error.message);return}await loadData();renderInventory()}
+
 const AUDIT_BOATS=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile"];
 const AUDIT_CATEGORY="cosmetique_technique";
 let auditBoatFilter="",auditDateFilter="",editingAuditId=null,auditZones=[];
@@ -658,11 +679,11 @@ async function adminMove(id,dir){
  let list=items.filter(i=>i.boat_id===items.find(x=>x.id===id).boat_id).sort((a,b)=>a.position-b.position),idx=list.findIndex(x=>x.id===id),j=idx+dir;if(j<0||j>=list.length)return;
  let a=list[idx],b=list[j];await client.from("checklist_items").update({position:b.position}).eq("id",a.id);await client.from("checklist_items").update({position:a.position}).eq("id",b.id);await refresh();renderAdmin()
 }
-async function refresh(){await loadData();renderHome();renderAdmin();renderChecklistHistory();if(!document.getElementById("page-levels").classList.contains("hidden"))renderLevels();if(!document.getElementById("page-temperatures").classList.contains("hidden"))renderTemperatures();if(!document.getElementById("page-audits").classList.contains("hidden"))renderAudits()}
-document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="history")renderChecklistHistory();if(b.dataset.page==="temperatures")renderTemperatures();if(b.dataset.page==="audits")renderAudits();if(b.dataset.page==="admin")renderAdmin()});
+async function refresh(){await loadData();renderHome();renderAdmin();renderChecklistHistory();if(!document.getElementById("page-levels").classList.contains("hidden"))renderLevels();if(!document.getElementById("page-temperatures").classList.contains("hidden"))renderTemperatures();if(!document.getElementById("page-inventory").classList.contains("hidden"))renderInventory();if(!document.getElementById("page-audits").classList.contains("hidden"))renderAudits()}
+document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="history")renderChecklistHistory();if(b.dataset.page==="temperatures")renderTemperatures();if(b.dataset.page==="inventory")renderInventory();if(b.dataset.page==="audits")renderAudits();if(b.dataset.page==="admin")renderAdmin()});
 document.getElementById("loginBtn").onclick=async()=>{let e=loginEmail.value.trim(),p=loginPassword.value;setMsg("loginMsg","Connexion…");let r=await client.auth.signInWithPassword({email:e,password:p});if(r.error)setMsg("loginMsg",r.error.message,true);else startApp()};
 document.getElementById("logoutBtn").onclick=async()=>{await client.auth.signOut();location.reload()};
-async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderLevels();renderTemperatures();renderChecklistHistory();renderAudits();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
+async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderLevels();renderTemperatures();renderInventory();renderChecklistHistory();renderAudits();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
 client.auth.onAuthStateChange((_event,session)=>{if(session&&!profile)startApp()});
 (async()=>{const {data:{session}}=await client.auth.getSession();if(session)startApp()})();
 </script>

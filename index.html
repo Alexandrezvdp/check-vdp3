@@ -152,8 +152,28 @@ function renderCalendar(){
  const monthName=calDate.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
  let cells="",d=new Date(start);
  for(let i=0;i<42;i++){let ds=isoDate(d), ts=tasks.filter(t=>t.task_date===ds);cells+=`<div class="day ${d.getMonth()!==m?"other":""} ${ds===selectedDate?"sel":""}" onclick="selectDay('${ds}')"><div class="num">${d.getDate()}</div>${ts.slice(0,3).map(t=>`<div class="task-dot ${t.status==="done"?"task-done":""}">${t.status==="done"?"✓":"•"} ${esc(t.boat_name||"")}</div>`).join("")}${ts.length>3?`<div class="small">+${ts.length-3}</div>`:""}</div>`;d.setDate(d.getDate()+1)}
- document.getElementById("page-calendar").innerHTML=`<div class="card"><div class="calendar-head"><button class="secondary" onclick="moveMonth(-1)">‹</button><h2 style="margin:0;text-transform:capitalize">${monthName}</h2><button class="secondary" onclick="moveMonth(1)">›</button></div><div class="cal">${["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map(x=>`<div class="dow">${x}</div>`).join("")}${cells}</div></div><div class="card" id="dayPanel"></div>`;
+ document.getElementById("page-calendar").innerHTML=`<div class="card"><div class="calendar-head"><button class="secondary" onclick="moveMonth(-1)">‹</button><h2 style="margin:0;text-transform:capitalize">${monthName}</h2><button class="secondary" onclick="moveMonth(1)">›</button></div><div class="cal">${["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map(x=>`<div class="dow">${x}</div>`).join("")}${cells}</div></div><div class="card" id="boatTaskBoard"></div><div class="card" id="dayPanel"></div>`;
+ renderBoatTaskBoard();
  renderDayPanel();
+}
+function renderBoatTaskBoard(){
+ const panel=document.getElementById("boatTaskBoard");
+ if(!panel)return;
+ const dayTasks=tasks.filter(t=>t.task_date===selectedDate);
+ const pending=dayTasks.filter(t=>t.status!=="done");
+ const grouped={};
+ pending.forEach(t=>{const key=t.boat_name||"Site non renseigné";(grouped[key]??=[]).push(t)});
+ const names=Object.keys(grouped).sort((a,b)=>a.localeCompare(b,"fr"));
+ const total=dayTasks.length, done=dayTasks.filter(t=>t.status==="done").length;
+ panel.innerHTML=`<div class="row" style="align-items:flex-start"><div class="grow"><h2 style="margin:0">🗂️ Tâches à faire par bateau / site</h2><div class="small">${esc(fmt(selectedDate))} · ${pending.length} à faire · ${done} réalisée(s) · ${total} au total</div></div><span class="pill ${pending.length?"warn":"ok"}">${pending.length?pending.length+" à faire":"✓ Tout est réalisé"}</span></div>`+
+ (names.length?`<div class="grid" style="margin-top:12px">${names.map(name=>{const list=grouped[name];return `<div class="card" style="margin:0;border-left:4px solid var(--accent,#2563eb)"><div class="row"><div class="grow"><h3 style="margin:0">⚓ ${esc(name)}</h3><div class="small">${list.length} tâche(s) à faire</div></div><span class="pill warn">${list.length}</span></div><div style="margin-top:10px">${list.map(t=>`<div style="padding:8px 0;border-top:1px solid #e5e7eb"><b>${esc(t.task)}</b>${t.operator_name?`<div class="small">👤 ${esc(t.operator_name)}</div>`:""}</div>`).join("")}</div><div class="row" style="margin-top:8px"><button class="secondary" onclick="showBoatTasks('${esc(name).replace(/'/g,"&#39;")}')">Voir les tâches</button></div></div>`}).join("")}</div>`:`<div class="empty" style="margin-top:12px">Aucune tâche à faire pour cette journée.</div>`);
+}
+function showBoatTasks(name){
+ const rows=tasks.filter(t=>t.task_date===selectedDate && (t.boat_name||"Site non renseigné")===name);
+ const panel=document.getElementById("dayPanel");
+ if(!panel)return;
+ panel.scrollIntoView({behavior:"smooth",block:"start"});
+ panel.innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0">⚓ ${esc(name)}</h2><div class="small">${esc(fmt(selectedDate))} · ${rows.length} tâche(s)</div></div><button class="secondary" onclick="renderDayPanel()">Voir toute la journée</button></div>`+(rows.length?rows.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">👤 ${esc(t.operator_name||"Non renseigné")}</div></div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div></div>`).join(""):`<p class="muted">Aucune tâche pour ce bateau / site.</p>`);
 }
 function renderDayPanel(){
  const ts=tasks.filter(t=>t.task_date===selectedDate);

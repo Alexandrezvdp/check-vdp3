@@ -212,7 +212,7 @@ function showBoatTasks(name){
 function renderDayPanel(){
  const ts=tasks.filter(t=>t.task_date===selectedDate);
  document.getElementById("dayPanel").innerHTML=`<div class="row"><div class="grow"><h2 style="margin:0;text-transform:capitalize">${fmt(selectedDate)}</h2><div class="small">${ts.length} tâche(s)</div></div><button onclick="showAddTaskForm()">＋ Ajouter une tâche</button></div>`+
- (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name||"Non renseigné")}</div>${t.task_comment?`<div class="small" style="margin-top:5px">💬 ${esc(t.task_comment)}</div>`:""}${Array.isArray(t.photo_urls)&&t.photo_urls.length?`<div class="small" style="margin-top:6px">📷 ${t.photo_urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">Voir la photo ${i+1}</a>`).join(" · ")}</div>`:""}</div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px"><button class="secondary" onclick="showEditTaskForm('${t.id}')">✎ Modifier</button>${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:""}<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button></div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
+ (ts.length?ts.map(t=>`<div class="task ${t.status==="done"?"done":""}"><div class="row"><div class="grow"><b>${esc(t.task)}</b><div class="small">⚓ ${esc(t.boat_name)} · 👤 ${esc(t.operator_name||"Non renseigné")}</div>${t.task_comment?`<div class="small" style="margin-top:5px">💬 ${esc(t.task_comment)}</div>`:""}${Array.isArray(t.photo_urls)&&t.photo_urls.length?`<div class="small" style="margin-top:6px">📷 ${t.photo_urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">Voir la photo ${i+1}</a>`).join(" · ")}</div>`:""}</div><span class="pill ${t.status==="done"?"ok":"warn"}">${t.status==="done"?"✓ Réalisée":"À faire"}</span></div><div class="row" style="margin-top:8px"><button class="secondary" onclick="showEditTaskForm('${t.id}')">✎ Modifier</button>${t.status!=="done"?`<button onclick="completeTask('${t.id}')">✓ Marquer réalisée</button>`:`<button class="secondary" onclick="uncompleteTask('${t.id}')">↩ Dévalider</button>`}<button class="danger" onclick="deleteTask('${t.id}')">Supprimer</button></div></div>`).join(""):`<p class="muted">Aucune tâche pour cette journée.</p>`);
 }
 function selectDay(ds){selectedDate=ds;renderCalendar()}
 function moveMonth(n){calDate.setMonth(calDate.getMonth()+n);renderCalendar()}
@@ -326,6 +326,16 @@ async function deleteTask(id){
  await refresh();
  renderCalendar();
 }
+async function uncompleteTask(id){
+ const t=tasks.find(x=>x.id===id); if(!t || t.status!=="done")return;
+ if(!confirm("Dévalider cette tâche et la remettre dans les tâches à faire ?"))return;
+ const {error}=await client.from("tasks").update({status:"todo",completed_at:null,completed_by:null}).eq("id",id);
+ if(error){alert("Impossible de dévalider la tâche : "+error.message);return}
+ await refresh();
+ renderCalendar();
+ alert("↩ Tâche remise dans les tâches à faire.");
+}
+
 async function completeTask(id){
  const t=tasks.find(x=>x.id===id); if(!t)return;
  let operator=(t.operator_name||"").trim();

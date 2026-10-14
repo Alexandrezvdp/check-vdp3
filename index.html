@@ -113,7 +113,7 @@ const ETOILE=[
 "Vérification ventilateurs variateur moteur",
 "Alimentations 24 V"
 ];
-let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],inventoryCatalog=[],inventoryRecords=[],filterInventoryCatalog=[],filterInventoryRecords=[],inventoryMode="oil",spareParts=[],sparePartsQuery={part:"",position:""},checklistSubmissions=[],auditRecords=[];
+let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],inventoryCatalog=[],inventoryRecords=[],filterInventoryCatalog=[],filterInventoryRecords=[],inventoryMode="oil",spareParts=[],sparePartsQuery={part:"",position:"",model:""},checklistSubmissions=[],auditRecords=[];
 let checklistGeneralComment="";
 let currentBoat=null,currentItems=[],answers={},photos={},checklistTechName="",checklistDate="";
 let calDate=new Date(); let selectedDate=isoDate(new Date());
@@ -530,7 +530,7 @@ async function saveInventoryRecord(){
  const items=readInventoryRows(boat);if(items.some(x=>x.quantity===null)){if(!confirm("Certaines quantités sont vides. Enregistrer quand même ?"))return}
  const {error}=await client.from("oil_grease_inventory_records").insert({boat_name:boat,inventory_date:date,operator_name:operator,items});
  if(error){alert("Impossible d'enregistrer l'inventaire : "+error.message);return}
- await loadData();renderInventory();alert("✓ Inventaire enregistré.")
+ await syncSparePartQuantities(items,date);await loadData();renderInventory();alert("✓ Inventaire enregistré. Les quantités correspondantes des pièces de rechange ont été mises à jour.")
 }
 async function editInventoryRecord(id){
  const x=inventoryRecords.find(r=>r.id===id);if(!x)return;
@@ -547,7 +547,7 @@ async function editInventoryRecord(id){
  }
  const {error}=await client.from("oil_grease_inventory_records").update({inventory_date:date.trim(),operator_name:operator.trim()||null,items}).eq("id",id);
  if(error){alert("Impossible de modifier l'inventaire : "+error.message);return}
- await loadData();renderInventory();alert("✓ Inventaire modifié.")
+ await syncSparePartQuantities(items,date.trim());await loadData();renderInventory();alert("✓ Inventaire modifié. Les quantités correspondantes des pièces de rechange ont été mises à jour.")
 }
 async function deleteInventoryRecord(id){if(!confirm("Supprimer définitivement cet inventaire ?"))return;const {error}=await client.from("oil_grease_inventory_records").delete().eq("id",id);if(error){alert("Impossible de supprimer l'inventaire : "+error.message);return}await loadData();renderInventory()}
 
@@ -567,7 +567,7 @@ async function saveFilterInventoryRecord(){
  const items=readFilterInventoryRows();if(items.some(x=>x.quantity===null)){if(!confirm("Certaines quantités sont vides. Enregistrer quand même ?"))return}
  const {error}=await client.from("oil_filter_ge_inventory_records").insert({boat_name:boat,inventory_date:date,operator_name:operator,items});
  if(error){alert("Impossible d'enregistrer l'inventaire filtres GE : "+error.message);return}
- await loadData();renderInventory();alert("✓ Inventaire filtres GE enregistré.")
+ await syncSparePartQuantities(items,date);await loadData();renderInventory();alert("✓ Inventaire filtres GE enregistré. Les quantités correspondantes des pièces de rechange ont été mises à jour.")
 }
 async function editFilterInventoryRecord(id){
  const x=filterInventoryRecords.find(r=>r.id===id);if(!x)return;
@@ -585,7 +585,7 @@ async function editFilterInventoryRecord(id){
  }
  const {error}=await client.from("oil_filter_ge_inventory_records").update({inventory_date:date.trim(),operator_name:operator.trim()||null,items}).eq("id",id);
  if(error){alert("Impossible de modifier l'inventaire filtres GE : "+error.message);return}
- await loadData();renderInventory();alert("✓ Inventaire filtres GE modifié.")
+ await syncSparePartQuantities(items,date.trim());await loadData();renderInventory();alert("✓ Inventaire filtres GE modifié. Les quantités correspondantes des pièces de rechange ont été mises à jour.")
 }
 async function deleteFilterInventoryRecord(id){
  if(!confirm("Supprimer définitivement cet inventaire filtres GE ?"))return;
@@ -595,17 +595,28 @@ async function deleteFilterInventoryRecord(id){
 }
 
 
-const SPARE_FIELDS=["Boat name","Equipment family","Equipment","Part","Controlled at (date or hours)","To be replaced at (date or hours)","Brand","Model","Serial number","Internal reference (if any)","Supplier","Purchase amount HT","Total purchase amount HT","Purchase amount (incl.VAT)","Purchase date","Position","Comment","Number in stock","Exact names of corresponding files (pictures, etc)"];
+function normalizePartName(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"")}
+async function syncSparePartQuantities(items,inventoryDate){
+ const {data,error}=await client.from("spare_parts").select("id,row_data");
+ if(error){console.warn("Synchronisation des quantités de pièces impossible :",error.message);return}
+ const date=inventoryDate&&/^\d{4}-\d{2}-\d{2}$/.test(inventoryDate)?inventoryDate.split("-").reverse().join("."):"30.09.2026";
+ for(const item of (items||[])){if(item.quantity===null||item.quantity===undefined)continue;const ref=normalizePartName(item.reference);if(!ref)continue;
+  const matches=(data||[]).filter(p=>normalizePartName(p.row_data?.["Part"])===ref);
+  for(const p of matches){const row_data={...(p.row_data||{}),"Number in stock":item.quantity,"Quantity last updated":date};const r=await client.from("spare_parts").update({row_data,updated_at:new Date().toISOString()}).eq("id",p.id);if(r.error)console.warn("Mise à jour du stock impossible pour "+item.reference+": "+r.error.message)}
+ }
+}
+
+const SPARE_FIELDS=["Boat name","Equipment family","Equipment","Part","Controlled at (date or hours)","To be replaced at (date or hours)","Brand","Model","Serial number","Internal reference (if any)","Supplier","Purchase amount HT","Total purchase amount HT","Purchase amount (incl.VAT)","Purchase date","Position","Comment","Number in stock","Quantity last updated","Exact names of corresponding files (pictures, etc)"];
 function spareValue(p,k){return p?.row_data?.[k]??""}
 function renderSpareParts(){
- const partQ=sparePartsQuery.part.toLocaleLowerCase("fr"),posQ=sparePartsQuery.position.toLocaleLowerCase("fr");
- const rows=spareParts.filter(p=>String(spareValue(p,"Part")).toLocaleLowerCase("fr").includes(partQ)&&String(spareValue(p,"Position")).toLocaleLowerCase("fr").includes(posQ));
+ const partQ=sparePartsQuery.part.toLocaleLowerCase("fr"),posQ=sparePartsQuery.position.toLocaleLowerCase("fr"),modelQ=sparePartsQuery.model.toLocaleLowerCase("fr");
+ const rows=spareParts.filter(p=>String(spareValue(p,"Part")).toLocaleLowerCase("fr").includes(partQ)&&String(spareValue(p,"Position")).toLocaleLowerCase("fr").includes(posQ)&&String(spareValue(p,"Model")).toLocaleLowerCase("fr").includes(modelQ));
  document.getElementById("page-spareparts").innerHTML=`<div class="card"><div class="row" style="flex-wrap:wrap"><div class="grow"><h2 style="margin:0">🔩 Liste des pièces de rechange</h2><p class="muted">Catalogue importé du fichier Inventaire Service technique 30.09.2026. Recherchez par Part ou Position. Ouvrez une fiche pour consulter ou modifier toutes ses informations.</p></div><button onclick="openSpareEditor()">＋ Ajouter une pièce</button></div>
- <div class="grid" style="margin-top:12px"><div><label>Recherche par Part</label><input id="spareSearchPart" placeholder="Nom ou référence de la pièce" value="${esc(sparePartsQuery.part)}" oninput="sparePartsQuery.part=this.value;renderSparePartsKeepFocus('part')"></div><div><label>Recherche par Position</label><input id="spareSearchPosition" placeholder="Emplacement de la pièce" value="${esc(sparePartsQuery.position)}" oninput="sparePartsQuery.position=this.value;renderSparePartsKeepFocus('position')"></div></div>
- <div class="row" style="margin-top:10px"><span class="pill">${rows.length} pièce(s) affichée(s) sur ${spareParts.length}</span><button class="secondary" onclick="sparePartsQuery={part:'',position:''};renderSpareParts()">Effacer les recherches</button></div></div>
- <div class="grid">${rows.map(p=>{const d=p.row_data||{};return `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0 0 6px">${esc(d["Part"]||"Pièce sans intitulé")}</h3><div class="muted">${esc(d["Equipment family"]||"Famille non renseignée")} · ${esc(d["Equipment"]||"Équipement non renseigné")}</div></div><span class="pill">Stock : ${esc(d["Number in stock"]??"—")}</span></div><div class="grid" style="margin-top:10px"><div><small class="muted">Bateau / site</small><div>${esc(d["Boat name"]||"—")}</div></div><div><small class="muted">Position</small><div>${esc(d["Position"]||"—")}</div></div><div><small class="muted">Marque / modèle</small><div>${esc([d["Brand"],d["Model"]].filter(Boolean).join(" · ")||"—")}</div></div><div><small class="muted">Référence interne</small><div>${esc(d["Internal reference (if any)"]||"—")}</div></div></div>${d["Comment"]?`<p class="muted">${esc(d["Comment"])}</p>`:""}<details style="margin-top:8px"><summary>Voir toutes les informations</summary><div class="levelgrid" style="margin-top:10px">${SPARE_FIELDS.map(k=>`<div><small class="muted">${esc(k)}</small><div style="overflow-wrap:anywhere">${esc(d[k]??"—")||"—"}</div></div>`).join("")}</div></details><div class="row" style="margin-top:12px"><button onclick="openSpareEditor('${p.id}')">✏️ Modifier la fiche</button><button class="danger" onclick="deleteSparePart('${p.id}')">Supprimer</button></div></div>`}).join("")||`<div class="card"><p>Aucune pièce ne correspond à ces recherches.</p></div>`}</div><div id="spareEditorHost"></div>`;
+ <div class="grid" style="margin-top:12px"><div><label>Recherche par Part</label><input id="spareSearchPart" placeholder="Nom ou référence de la pièce" value="${esc(sparePartsQuery.part)}" oninput="sparePartsQuery.part=this.value;renderSparePartsKeepFocus('part')"></div><div><label>Recherche par Position</label><input id="spareSearchPosition" placeholder="Emplacement de la pièce" value="${esc(sparePartsQuery.position)}" oninput="sparePartsQuery.position=this.value;renderSparePartsKeepFocus('position')"></div><div><label>Recherche par Model</label><input id="spareSearchModel" placeholder="Modèle de la pièce" value="${esc(sparePartsQuery.model)}" oninput="sparePartsQuery.model=this.value;renderSparePartsKeepFocus('model')"></div></div>
+ <div class="row" style="margin-top:10px"><span class="pill">${rows.length} pièce(s) affichée(s) sur ${spareParts.length}</span><button class="secondary" onclick="sparePartsQuery={part:'',position:'',model:''};renderSpareParts()">Effacer les recherches</button></div></div>
+ <div class="grid">${rows.map(p=>{const d=p.row_data||{};return `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0 0 6px">${esc(d["Part"]||"Pièce sans intitulé")}</h3><div class="muted">${esc(d["Equipment family"]||"Famille non renseignée")} · ${esc(d["Equipment"]||"Équipement non renseigné")}</div></div><span class="pill">Stock : ${esc(d["Number in stock"]??"—")}</span></div><div class="small muted" style="margin-top:5px">Quantité modifiée le : ${esc(d["Quantity last updated"]||"30.09.2026")}</div><div class="grid" style="margin-top:10px"><div><small class="muted">Bateau / site</small><div>${esc(d["Boat name"]||"—")}</div></div><div><small class="muted">Position</small><div>${esc(d["Position"]||"—")}</div></div><div><small class="muted">Marque / modèle</small><div>${esc([d["Brand"],d["Model"]].filter(Boolean).join(" · ")||"—")}</div></div><div><small class="muted">Référence interne</small><div>${esc(d["Internal reference (if any)"]||"—")}</div></div></div>${d["Comment"]?`<p class="muted">${esc(d["Comment"])}</p>`:""}<details style="margin-top:8px"><summary>Voir toutes les informations</summary><div class="levelgrid" style="margin-top:10px">${SPARE_FIELDS.map(k=>`<div><small class="muted">${esc(k)}</small><div style="overflow-wrap:anywhere">${esc(d[k]??"—")||"—"}</div></div>`).join("")}</div></details><div class="row" style="margin-top:12px"><button onclick="openSpareEditor('${p.id}')">✏️ Modifier la fiche</button><button class="danger" onclick="deleteSparePart('${p.id}')">Supprimer</button></div></div>`}).join("")||`<div class="card"><p>Aucune pièce ne correspond à ces recherches.</p></div>`}</div><div id="spareEditorHost"></div>`;
 }
-function renderSparePartsKeepFocus(which){renderSpareParts();const id=which==="part"?"spareSearchPart":"spareSearchPosition";const el=document.getElementById(id);if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length)}}
+function renderSparePartsKeepFocus(which){renderSpareParts();const id=which==="part"?"spareSearchPart":which==="model"?"spareSearchModel":"spareSearchPosition";const el=document.getElementById(id);if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length)}}
 function openSpareEditor(id=""){
  const p=id?spareParts.find(x=>x.id===id):null,d=p?.row_data||{};
  const host=document.getElementById("spareEditorHost");if(!host)return;
@@ -614,6 +625,7 @@ function openSpareEditor(id=""){
 }
 async function saveSparePart(id){
  const row_data={};SPARE_FIELDS.forEach((k,i)=>{let v=document.getElementById("sp_"+i)?.value?.trim()||"";if(["Purchase amount HT","Total purchase amount HT","Purchase amount (incl.VAT)","Number in stock"].includes(k)&&v!=="")v=Number(v);row_data[k]=v;});
+ if(!row_data["Quantity last updated"])row_data["Quantity last updated"]="30.09.2026";
  if(!row_data["Part"]){alert("Renseignez au minimum le champ Part.");return}
  let r=id?await client.from("spare_parts").update({row_data,updated_at:new Date().toISOString()}).eq("id",id):await client.from("spare_parts").insert({row_data});
  if(r.error){alert("Impossible d'enregistrer la pièce : "+r.error.message);return}

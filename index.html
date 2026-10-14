@@ -58,6 +58,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <button data-page="levels">🛢️ Suivi niveaux</button>
 <button data-page="temperatures">🌡️ Températures ligne d’arbre</button>
 <button data-page="inventory">🧰 Inventaire</button>
+<button data-page="spareparts">🔩 Liste des pièces de rechange</button>
 <button data-page="history">📋 Checklists enregistrées</button>
 <button data-page="audits">🔎 Audit bateaux</button>
 <button data-page="admin" id="adminNav" class="hidden">⚙️ Administration</button>
@@ -69,6 +70,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <section id="page-levels" class="hidden"></section>
 <section id="page-temperatures" class="hidden"></section>
 <section id="page-inventory" class="hidden"></section>
+<section id="page-spareparts" class="hidden"></section>
 <section id="page-history" class="hidden"></section>
 <section id="page-audits" class="hidden"></section>
 <section id="page-admin" class="hidden"></section>
@@ -111,7 +113,7 @@ const ETOILE=[
 "Vérification ventilateurs variateur moteur",
 "Alimentations 24 V"
 ];
-let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],inventoryCatalog=[],inventoryRecords=[],filterInventoryCatalog=[],filterInventoryRecords=[],inventoryMode="oil",checklistSubmissions=[],auditRecords=[];
+let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],inventoryCatalog=[],inventoryRecords=[],filterInventoryCatalog=[],filterInventoryRecords=[],inventoryMode="oil",spareParts=[],sparePartsQuery={part:"",position:""},checklistSubmissions=[],auditRecords=[];
 let checklistGeneralComment="";
 let currentBoat=null,currentItems=[],answers={},photos={},checklistTechName="",checklistDate="";
 let calDate=new Date(); let selectedDate=isoDate(new Date());
@@ -138,6 +140,7 @@ async function loadData(){
  r=await client.from("oil_grease_inventory_records").select("*").order("inventory_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Inventaire huile & graisse indisponible :",r.error.message);inventoryRecords=[];} else inventoryRecords=r.data||[];
  r=await client.from("oil_filter_ge_catalog").select("*").order("position"); if(r.error){console.warn("Catalogue filtres GE Etoile indisponible :",r.error.message);filterInventoryCatalog=[];} else filterInventoryCatalog=r.data||[];
  r=await client.from("oil_filter_ge_inventory_records").select("*").order("inventory_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Inventaire filtres GE Etoile indisponible :",r.error.message);filterInventoryRecords=[];} else filterInventoryRecords=r.data||[];
+ r=await client.from("spare_parts").select("*").order("created_at",{ascending:true}); if(r.error){console.warn("Liste des pièces de rechange indisponible :",r.error.message);spareParts=[];} else spareParts=r.data||[];
  r=await client.from("checklist_submissions").select("*").order("checklist_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Historique des checklists indisponible :",r.error.message);checklistSubmissions=[];} else checklistSubmissions=r.data||[];
  r=await client.from("boat_audits").select("*").order("audit_date",{ascending:false}).order("created_at",{ascending:false}); if(r.error){console.warn("Audit bateaux indisponible :",r.error.message);auditRecords=[];} else auditRecords=r.data||[];
 }
@@ -591,6 +594,37 @@ async function deleteFilterInventoryRecord(id){
  await loadData();renderInventory()
 }
 
+
+const SPARE_FIELDS=["Boat name","Equipment family","Equipment","Part","Controlled at (date or hours)","To be replaced at (date or hours)","Brand","Model","Serial number","Internal reference (if any)","Supplier","Purchase amount HT","Total purchase amount HT","Purchase amount (incl.VAT)","Purchase date","Position","Comment","Number in stock","Exact names of corresponding files (pictures, etc)"];
+function spareValue(p,k){return p?.row_data?.[k]??""}
+function renderSpareParts(){
+ const partQ=sparePartsQuery.part.toLocaleLowerCase("fr"),posQ=sparePartsQuery.position.toLocaleLowerCase("fr");
+ const rows=spareParts.filter(p=>String(spareValue(p,"Part")).toLocaleLowerCase("fr").includes(partQ)&&String(spareValue(p,"Position")).toLocaleLowerCase("fr").includes(posQ));
+ document.getElementById("page-spareparts").innerHTML=`<div class="card"><div class="row" style="flex-wrap:wrap"><div class="grow"><h2 style="margin:0">🔩 Liste des pièces de rechange</h2><p class="muted">Catalogue importé du fichier Inventaire Service technique 30.09.2026. Recherchez par Part ou Position. Ouvrez une fiche pour consulter ou modifier toutes ses informations.</p></div><button onclick="openSpareEditor()">＋ Ajouter une pièce</button></div>
+ <div class="grid" style="margin-top:12px"><div><label>Recherche par Part</label><input id="spareSearchPart" placeholder="Nom ou référence de la pièce" value="${esc(sparePartsQuery.part)}" oninput="sparePartsQuery.part=this.value;renderSparePartsKeepFocus('part')"></div><div><label>Recherche par Position</label><input id="spareSearchPosition" placeholder="Emplacement de la pièce" value="${esc(sparePartsQuery.position)}" oninput="sparePartsQuery.position=this.value;renderSparePartsKeepFocus('position')"></div></div>
+ <div class="row" style="margin-top:10px"><span class="pill">${rows.length} pièce(s) affichée(s) sur ${spareParts.length}</span><button class="secondary" onclick="sparePartsQuery={part:'',position:''};renderSpareParts()">Effacer les recherches</button></div></div>
+ <div class="grid">${rows.map(p=>{const d=p.row_data||{};return `<div class="card"><div class="row"><div class="grow"><h3 style="margin:0 0 6px">${esc(d["Part"]||"Pièce sans intitulé")}</h3><div class="muted">${esc(d["Equipment family"]||"Famille non renseignée")} · ${esc(d["Equipment"]||"Équipement non renseigné")}</div></div><span class="pill">Stock : ${esc(d["Number in stock"]??"—")}</span></div><div class="grid" style="margin-top:10px"><div><small class="muted">Bateau / site</small><div>${esc(d["Boat name"]||"—")}</div></div><div><small class="muted">Position</small><div>${esc(d["Position"]||"—")}</div></div><div><small class="muted">Marque / modèle</small><div>${esc([d["Brand"],d["Model"]].filter(Boolean).join(" · ")||"—")}</div></div><div><small class="muted">Référence interne</small><div>${esc(d["Internal reference (if any)"]||"—")}</div></div></div>${d["Comment"]?`<p class="muted">${esc(d["Comment"])}</p>`:""}<details style="margin-top:8px"><summary>Voir toutes les informations</summary><div class="levelgrid" style="margin-top:10px">${SPARE_FIELDS.map(k=>`<div><small class="muted">${esc(k)}</small><div style="overflow-wrap:anywhere">${esc(d[k]??"—")||"—"}</div></div>`).join("")}</div></details><div class="row" style="margin-top:12px"><button onclick="openSpareEditor('${p.id}')">✏️ Modifier la fiche</button><button class="danger" onclick="deleteSparePart('${p.id}')">Supprimer</button></div></div>`}).join("")||`<div class="card"><p>Aucune pièce ne correspond à ces recherches.</p></div>`}</div><div id="spareEditorHost"></div>`;
+}
+function renderSparePartsKeepFocus(which){renderSpareParts();const id=which==="part"?"spareSearchPart":"spareSearchPosition";const el=document.getElementById(id);if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length)}}
+function openSpareEditor(id=""){
+ const p=id?spareParts.find(x=>x.id===id):null,d=p?.row_data||{};
+ const host=document.getElementById("spareEditorHost");if(!host)return;
+ host.innerHTML=`<div class="card" id="spareEditor"><h2>${p?"✏️ Modifier une pièce":"＋ Ajouter une pièce"}</h2><p class="muted">Tous les champs de la ligne Excel peuvent être renseignés ou modifiés.</p><div class="grid">${SPARE_FIELDS.map((k,i)=>`<div><label>${esc(k)}</label>${k==="Comment"||k==="Exact names of corresponding files (pictures, etc)"?`<textarea id="sp_${i}" rows="2">${esc(d[k]??"")}</textarea>`:`<input id="sp_${i}" value="${esc(d[k]??"")}" ${["Purchase amount HT","Total purchase amount HT","Purchase amount (incl.VAT)","Number in stock"].includes(k)?'type="number" step="any"':''} ${k==="Purchase date"?'placeholder="AAAA-MM-JJ"':''}>`}</div>`).join("")}</div><div class="row" style="margin-top:14px"><button onclick="saveSparePart('${id}')">💾 Enregistrer</button><button class="secondary" onclick="document.getElementById('spareEditorHost').innerHTML=''">Annuler</button></div><div id="spareEditorMsg" class="muted"></div></div>`;
+ host.scrollIntoView({behavior:"smooth",block:"start"});
+}
+async function saveSparePart(id){
+ const row_data={};SPARE_FIELDS.forEach((k,i)=>{let v=document.getElementById("sp_"+i)?.value?.trim()||"";if(["Purchase amount HT","Total purchase amount HT","Purchase amount (incl.VAT)","Number in stock"].includes(k)&&v!=="")v=Number(v);row_data[k]=v;});
+ if(!row_data["Part"]){alert("Renseignez au minimum le champ Part.");return}
+ let r=id?await client.from("spare_parts").update({row_data,updated_at:new Date().toISOString()}).eq("id",id):await client.from("spare_parts").insert({row_data});
+ if(r.error){alert("Impossible d'enregistrer la pièce : "+r.error.message);return}
+ await loadData();renderSpareParts();alert(id?"Pièce modifiée.":"Pièce ajoutée.");
+}
+async function deleteSparePart(id){
+ const p=spareParts.find(x=>x.id===id);if(!p||!confirm(`Supprimer définitivement la pièce « ${spareValue(p,"Part")} » ?`))return;
+ const {error}=await client.from("spare_parts").delete().eq("id",id);if(error){alert("Impossible de supprimer la pièce : "+error.message);return}
+ await loadData();renderSpareParts();
+}
+
 const AUDIT_BOATS=["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile"];
 const AUDIT_CATEGORY="cosmetique_technique";
 let auditBoatFilter="",auditDateFilter="",editingAuditId=null,auditZones=[];
@@ -803,10 +837,10 @@ async function adminMove(id,dir){
  let a=list[idx],b=list[j];await client.from("checklist_items").update({position:b.position}).eq("id",a.id);await client.from("checklist_items").update({position:a.position}).eq("id",b.id);await refresh();renderAdmin()
 }
 async function refresh(){await loadData();renderHome();renderAdmin();renderChecklistHistory();if(!document.getElementById("page-levels").classList.contains("hidden"))renderLevels();if(!document.getElementById("page-temperatures").classList.contains("hidden"))renderTemperatures();if(!document.getElementById("page-inventory").classList.contains("hidden"))renderInventory();if(!document.getElementById("page-audits").classList.contains("hidden"))renderAudits()}
-document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="history")renderChecklistHistory();if(b.dataset.page==="temperatures")renderTemperatures();if(b.dataset.page==="inventory")renderInventory();if(b.dataset.page==="audits")renderAudits();if(b.dataset.page==="admin")renderAdmin()});
+document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==="calendar")renderCalendar();if(b.dataset.page==="history")renderChecklistHistory();if(b.dataset.page==="temperatures")renderTemperatures();if(b.dataset.page==="inventory")renderInventory();if(b.dataset.page==="spareparts")renderSpareParts();if(b.dataset.page==="audits")renderAudits();if(b.dataset.page==="admin")renderAdmin()});
 document.getElementById("loginBtn").onclick=async()=>{let e=loginEmail.value.trim(),p=loginPassword.value;setMsg("loginMsg","Connexion…");let r=await client.auth.signInWithPassword({email:e,password:p});if(r.error)setMsg("loginMsg",r.error.message,true);else startApp()};
 document.getElementById("logoutBtn").onclick=async()=>{await client.auth.signOut();location.reload()};
-async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderLevels();renderTemperatures();renderInventory();renderChecklistHistory();renderAudits();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
+async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderCalendar();renderLevels();renderTemperatures();renderInventory();renderSpareParts();renderChecklistHistory();renderAudits();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
 client.auth.onAuthStateChange((_event,session)=>{if(session&&!profile)startApp()});
 (async()=>{const {data:{session}}=await client.auth.getSession();if(session)startApp()})();
 </script>

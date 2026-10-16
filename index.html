@@ -61,7 +61,6 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <button data-page="inventory">🧰 Inventaire</button>
 <button data-page="spareparts">🔩 Pièces de rechange</button>
 <button data-page="purchaseorders">🧾 Bon de commande</button>
-<button data-page="history">📋 Checklists</button>
 <button data-page="audits">🔎 Audit bateaux</button>
 <button data-page="admin" id="adminNav" class="hidden">⚙️ Administration</button>
 <button id="logoutBtn" class="secondary">Déconnexion</button>
@@ -74,7 +73,6 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <section id="page-inventory" class="hidden"></section>
 <section id="page-spareparts" class="hidden"></section>
 <section id="page-purchaseorders" class="hidden"></section>
-<section id="page-history" class="hidden"></section>
 <section id="page-audits" class="hidden"></section>
 <section id="page-admin" class="hidden"></section>
 <section id="page-checklist" class="hidden"></section>
@@ -152,7 +150,6 @@ function openAppPage(p){
  showPage(p);
  if(p==="calendar")renderCalendar();
  if(p==="checklist")renderChecklists();
- if(p==="history")renderChecklistHistory();
  if(p==="temperatures")renderTemperatures();
  if(p==="inventory")renderInventory();
  if(p==="spareparts")renderSpareParts();
@@ -169,7 +166,6 @@ function renderHome(){
   ["inventory","🧰","Inventaire","Inventaire Huile & Graisse et filtres à huile GE Etoile."],
   ["spareparts","🔩","Pièces de rechange","Consulter le stock disponible et les pièces en cours de livraison."],
   ["purchaseorders","🧾","Bons de commande","Créer, imprimer et retrouver les bons de commande fournisseurs."],
-  ["history","📋","Checklists enregistrées","Retrouver les checklists par bateau et par date."],
   ["audits","🔎","Audit bateaux","Créer, consulter et exporter les audits des bateaux."]
  ];
  if(profile?.role==="admin")pages.push(["admin","⚙️","Administration","Gérer les utilisateurs et les paramètres d’accès."]);
@@ -178,7 +174,7 @@ function renderHome(){
 }
 function renderChecklists(){
  const checklistBoats=boats.filter(b=>["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile"].includes(b.name));
- document.getElementById("page-checklist").innerHTML=`<div class="card"><h2>☑️ Check list</h2><p class="muted">Choisissez un bateau pour ouvrir sa checklist technique. Matin et Soir : à venir.</p><div class="grid">${checklistBoats.map(b=>`<div class="card boat"><h3>⚓ ${esc(b.name)}</h3><span class="pill">🔧 Technique</span><div class="small" style="margin:8px 0">${items.filter(i=>i.boat_id===b.id).length} points de contrôle</div><button onclick="openChecklist('${b.id}')">Ouvrir la checklist →</button></div>`).join("")}</div></div>`;
+ document.getElementById("page-checklist").innerHTML=`<div id="newChecklistSection"><div class="card"><h2>☑️ Checklists</h2><p class="muted">Démarrer une nouvelle checklist ou retrouver les checklists enregistrées par jour.</p><h3>＋ Nouvelle checklist</h3><div class="grid">${checklistBoats.map(b=>`<div class="card boat"><h3>⚓ ${esc(b.name)}</h3><span class="pill">🔧 Technique</span><div class="small" style="margin:8px 0">${items.filter(i=>i.boat_id===b.id).length} points de contrôle</div><button onclick="openChecklist('${b.id}')">Nouvelle checklist →</button></div>`).join("")}</div></div></div><div id="checklistHistorySection"></div>`; renderChecklistHistory();
 }
 function renderCalendar(){
  const y=calDate.getFullYear(),m=calDate.getMonth();
@@ -977,9 +973,8 @@ function renderChecklistHistory(){
  const sorted=[...list].sort((a,b)=>String(b.checklist_date||"").localeCompare(String(a.checklist_date||""))||String(a.boat_name||"").localeCompare(String(b.boat_name||"")));
  const byDay={}; sorted.forEach(s=>{const d=s.checklist_date||"Date inconnue";(byDay[d]??=[]).push(s)});
  const dayCards=Object.entries(byDay).map(([day,rows])=>`<div class="card"><div class="row" style="align-items:center"><div class="grow"><h3 style="margin:0">📅 ${esc(day)}</h3><div class="small">${rows.length} checklist(s) enregistrée(s)</div></div><span class="pill ok">${new Set(rows.map(x=>x.boat_name)).size} bateau(x) préparé(s)</span></div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0">${rows.map(s=>`<span style="display:inline-flex;align-items:center;gap:6px;background:#e8f5e9;color:#176b35;border:1px solid #b7dfbf;border-radius:18px;padding:7px 11px;font-weight:600">✓ ${esc(s.boat_name)}</span>`).join("")}</div>${rows.map(s=>{const r=s.result||{},its=Array.isArray(r.items)?r.items:[],anomalies=its.filter(i=>i.status==="anomaly");return `<div class="item"><div class="row"><div class="grow"><b>⚓ ${esc(s.boat_name)}</b><div class="small">👤 ${esc(s.operator_name||"Technicien non renseigné")} · ${its.length} point(s) · ${anomalies.length} anomalie(s)</div><div class="small">Enregistrée le ${new Date(s.created_at).toLocaleString("fr-FR")}</div></div><span class="pill ok">✓ Enregistrée</span></div><div class="row" style="margin-top:8px"><button onclick="viewChecklistSubmission('${s.id}')">👁 Voir la checklist</button>${profile?.role==="admin"?`<button class="danger" onclick="deleteChecklistSubmission('${s.id}')">🗑 Supprimer</button>`:""}</div></div>`}).join("")}</div>`).join("");
- document.getElementById("page-history").innerHTML=`<div class="card"><h2>📋 Checklists</h2><p class="muted">Créez une nouvelle checklist ou consultez les checklists enregistrées. Les bateaux préparés sont regroupés visuellement par jour.</p><h3>＋ Nouvelle checklist</h3><div class="grid">${boatsForFilter.map(b=>`<div class="item"><div class="row"><div class="grow"><b>⚓ ${esc(b.name)}</b><div class="small">Checklist technique</div></div><button onclick="openChecklist('${b.id}')">Nouvelle checklist</button></div></div>`).join("")}</div></div>`+
- `<div class="card"><h3>✓ Checklists enregistrées</h3><div class="row"><div class="grow"><label>Bateau</label><select id="historyBoat" onchange="renderChecklistHistory()"><option value="">Tous les bateaux</option>${boatsForFilter.map(b=>`<option value="${esc(b.name)}" ${boatFilter===b.name?"selected":""}>${esc(b.name)}</option>`).join("")}</select></div><div class="grow"><label>Date</label><input id="historyDate" type="date" value="${esc(dateFilter)}" onchange="renderChecklistHistory()"></div><div style="align-self:end"><button class="secondary" onclick="clearChecklistHistoryFilters()">Réinitialiser</button></div></div></div>`+
- (sorted.length?dayCards:`<div class="card"><p class="muted">Aucune checklist enregistrée pour ces critères.</p></div>`);
+ const target=document.getElementById("checklistHistorySection"); if(!target)return;
+ target.innerHTML=`<div class="card"><h3>✓ Checklists enregistrées</h3><div class="row"><div class="grow"><label>Bateau</label><select id="historyBoat" onchange="renderChecklistHistory()"><option value="">Tous les bateaux</option>${boatsForFilter.map(b=>`<option value="${esc(b.name)}" ${boatFilter===b.name?"selected":""}>${esc(b.name)}</option>`).join("")}</select></div><div class="grow"><label>Date</label><input id="historyDate" type="date" value="${esc(dateFilter)}" onchange="renderChecklistHistory()"></div><div style="align-self:end"><button class="secondary" onclick="clearChecklistHistoryFilters()">Réinitialiser</button></div></div></div>`+(sorted.length?dayCards:`<div class="card"><p class="muted">Aucune checklist enregistrée pour ces critères.</p></div>`);
 }
 function clearChecklistHistoryFilters(){renderChecklistHistory()}
 async function deleteChecklistSubmission(id){
@@ -994,10 +989,10 @@ async function deleteChecklistSubmission(id){
 function viewChecklistSubmission(id){
  const s=checklistSubmissions.find(x=>x.id===id); if(!s)return;
  const r=s.result||{},its=Array.isArray(r.items)?r.items:[],photos=Array.isArray(r.photo_links)?r.photo_links:[];
- document.getElementById("page-history").innerHTML=`<div class="card"><div class="row"><button class="secondary" onclick="renderChecklistHistory()">← Retour à l'historique</button><div class="grow"><h2 style="margin:0">📋 Checklist — ${esc(s.boat_name)}</h2></div></div><p><b>Date :</b> ${esc(s.checklist_date)}<br><b>Technicien :</b> ${esc(s.operator_name)}<br><b>Enregistrée le :</b> ${new Date(s.created_at).toLocaleString("fr-FR")}</p></div>`+
+ document.getElementById("page-checklist").innerHTML=`<div class="card"><div class="row"><button class="secondary" onclick="renderChecklists()">← Retour aux checklists</button><div class="grow"><h2 style="margin:0">📋 Checklist — ${esc(s.boat_name)}</h2></div></div><p><b>Date :</b> ${esc(s.checklist_date)}<br><b>Technicien :</b> ${esc(s.operator_name)}<br><b>Enregistrée le :</b> ${new Date(s.created_at).toLocaleString("fr-FR")}</p></div>`+
  `<div class="card"><h3>Résultats</h3>${its.map((it,n)=>`<div class="item"><div class="row"><div class="grow"><b>${n+1}. ${esc(it.title)}</b>${it.description?`<div class="small" style="margin-top:5px">${esc(it.description)}</div>`:""}</div><span class="pill ${it.status==="ok"?"ok":it.status==="anomaly"?"warn":""}">${it.status==="ok"?"✓ Conforme":it.status==="anomaly"?"⚠ Anomalie":"— N/A"}</span></div>${it.level_quantities&&Object.keys(it.level_quantities).some(k=>it.level_quantities[k])?`<div class="small" style="margin-top:5px">🛢️ ${Object.entries(it.level_quantities).filter(([k,v])=>v).map(([k,v])=>`${esc(k)} : ${esc(v)} L`).join(" · ")}</div>`:""}</div>`).join("")}</div>`+
  (r.general_comment?`<div class="card"><h3>💬 Commentaire</h3><p style="white-space:pre-wrap">${esc(r.general_comment)}</p></div>`:"")+(photos.length?`<div class="card"><h3>📷 Photos</h3>${photos.map((x,i)=>`<div style="margin:7px 0"><a href="${esc(x.url)}" target="_blank" rel="noopener">Voir la photo ${i+1} — ${esc(x.title||"")}</a></div>`).join("")}</div>`:"");
- showPage("history");
+ showPage("checklist");
 }
 
 function renderAdmin(){

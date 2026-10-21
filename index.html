@@ -117,7 +117,7 @@ const ETOILE=[
 let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],inventoryCatalog=[],inventoryRecords=[],filterInventoryCatalog=[],filterInventoryRecords=[],inventoryMode="oil",spareParts=[],sparePartsQuery={part:"",position:"",model:""},sparePartsPage="stock",purchaseOrders=[],purchaseOrderDraftItems=[],purchaseOrderHeader={company:"",date:"",internalRef:"",offer:"",comments:""},checklistSubmissions=[],auditRecords=[];
 let checklistGeneralComment="";
 let currentBoat=null,currentItems=[],answers={},photos={},checklistTechName="",checklistDate="";
-let calDate=new Date(); let selectedDate=isoDate(new Date());
+let calDate=new Date(); let selectedDate=isoDate(new Date()); let calendarMode="daily",weeklyPool=[]; let weeklyWeekStart=isoDate(new Date());
 
 function isoDate(d){return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
@@ -135,6 +135,9 @@ async function loadData(){
  let r=await client.from("boats").select("*").order("sort_order"); if(r.error)throw r.error; boats=r.data||[];
  r=await client.from("checklist_items").select("*").eq("active",true).order("boat_id").order("position"); if(r.error)throw r.error; items=r.data||[];
  r=await client.from("tasks").select("*").order("task_date").order("created_at"); if(r.error)throw r.error; tasks=r.data||[];
+ r=await client.from("weekly_task_pool").select("*").order("week_start").order("created_at");
+ if(r.error){console.warn("Planning hebdomadaire indisponible :",r.error.message);weeklyPool=[];} else weeklyPool=r.data||[];
+ await rolloverOverdueTasks();
  r=await client.from("level_records").select("*").order("created_at",{ascending:false}); if(r.error)throw r.error; levelRecords=r.data||[];
  r=await client.from("temperature_records").select("*").order("created_at",{ascending:false}); if(r.error){console.warn("Suivi des températures indisponible :",r.error.message);temperatureRecords=[];} else temperatureRecords=r.data||[];
  r=await client.from("oil_grease_catalog").select("*").order("boat_name").order("position"); if(r.error){console.warn("Catalogue huile & graisse indisponible :",r.error.message);inventoryCatalog=[];} else inventoryCatalog=r.data||[];
@@ -176,16 +179,90 @@ function renderChecklists(){
  const checklistBoats=boats.filter(b=>["Paris Iéna","Paris Trocadéro","Paris Montmartre","Paris Montparnasse","Paris Etoile"].includes(b.name));
  document.getElementById("page-checklist").innerHTML=`<div id="newChecklistSection"><div class="card"><h2>☑️ Checklists</h2><p class="muted">Démarrer une nouvelle checklist ou retrouver les checklists enregistrées par jour.</p><h3>＋ Nouvelle checklist</h3><div class="grid">${checklistBoats.map(b=>`<div class="card boat"><h3>⚓ ${esc(b.name)}</h3><span class="pill">🔧 Technique</span><div class="small" style="margin:8px 0">${items.filter(i=>i.boat_id===b.id).length} points de contrôle</div><button onclick="openChecklist('${b.id}')">Nouvelle checklist →</button></div>`).join("")}</div></div></div><div id="checklistHistorySection"></div>`; renderChecklistHistory();
 }
+async function rolloverOverdueTasks(){
+ const today=isoDate(new Date());
+ const overdue=tasks.filter(t=>t.status!=="done" && t.task_date && t.task_date<today);
+ for(const t of overdue){
+  const oldDate=t.task_date;
+  const note=`[Report automatique du ${oldDate}]`;
+  const comment=[t.task_comment,note].filter(Boolean).join("\\n");
+  const {error}=await client.from("tasks").update({task_date:today,task_comment:comment}).eq("id",t.id).neq("status","done");
+  if(!error){t.task_date=today;t.task_comment=comment;}
+  else console.warn("Report automatique impossible pour la tâche",t.id,error.message);
+ }
+}
+function startOfWeek(dateStr){
+ const d=new Date((dateStr||isoDate(new Date()))+"T12:00:00");
+ const day=(d.getDay()+6)%7;d.setDate(d.getDate()-day);return isoDate(d);
+}
+function addDays(dateStr,n){const d=new Date(dateStr+"T12:00:00");d.setDate(d.getDate()+n);return isoDate(d)}
 function renderCalendar(){
  const y=calDate.getFullYear(),m=calDate.getMonth();
  const first=new Date(y,m,1), start=new Date(y,m,1-first.getDay()+1); // Monday
  const monthName=calDate.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
  let cells="",d=new Date(start);
  for(let i=0;i<42;i++){let ds=isoDate(d), ts=tasks.filter(t=>t.task_date===ds);cells+=`<div class="day ${d.getMonth()!==m?"other":""} ${ds===selectedDate?"sel":""}" onclick="selectDay('${ds}')"><div class="num">${d.getDate()}</div>${ts.slice(0,3).map(t=>`<div class="task-dot ${t.status==="done"?"task-done":""}">${t.status==="done"?"✓":"•"} ${esc(t.boat_name||"")}</div>`).join("")}${ts.length>3?`<div class="small">+${ts.length-3}</div>`:""}</div>`;d.setDate(d.getDate()+1)}
- document.getElementById("page-calendar").innerHTML=`<div class="card"><div class="calendar-head"><button class="secondary" onclick="moveMonth(-1)">‹</button><h2 style="margin:0;text-transform:capitalize">${monthName}</h2><button class="secondary" onclick="moveMonth(1)">›</button></div><div class="cal">${["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map(x=>`<div class="dow">${x}</div>`).join("")}${cells}</div></div><div class="card" id="boatTaskBoard"></div><div class="card" id="dayPanel"></div>`;
- renderBoatTaskBoard();
- renderDayPanel();
+ document.getElementById("page-calendar").innerHTML=`<div class="card"><h2 style="margin-top:0">📅 Planning</h2><div class="row"><button class="${calendarMode==="daily"?"":"secondary"}" onclick="setCalendarMode('daily')">Planning actuel</button><button class="${calendarMode==="weekly"?"":"secondary"}" onclick="setCalendarMode('weekly')">Planning hebdomadaire</button></div></div>`+(calendarMode==="weekly"?renderWeeklyMarkup():`<div class="card"><div class="calendar-head"><button class="secondary" onclick="moveMonth(-1)">‹</button><h2 style="margin:0;text-transform:capitalize">${monthName}</h2><button class="secondary" onclick="moveMonth(1)">›</button></div><div class="cal">${["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map(x=>`<div class="dow">${x}</div>`).join("")}${cells}</div></div><div class="card" id="boatTaskBoard"></div><div class="card" id="dayPanel"></div>`);
+ if(calendarMode==="daily"){renderBoatTaskBoard();renderDayPanel();}
 }
+function setCalendarMode(mode){calendarMode=mode;renderCalendar()}
+function renderWeeklyMarkup(){
+ weeklyWeekStart=startOfWeek(weeklyWeekStart);
+ const weekEnd=addDays(weeklyWeekStart,6);
+ const rows=weeklyPool.filter(x=>x.week_start===weeklyWeekStart);
+ const days=[0,1,2,3,4,5,6].map(i=>{const d=addDays(weeklyWeekStart,i);return `<option value="${d}">${fmt(d)}</option>`}).join("");
+ return `<div class="card"><div class="row"><button class="secondary" onclick="moveWeeklyWeek(-7)">‹ Semaine précédente</button><div class="grow"><h2 style="margin:0">🗓️ Semaine du ${fmt(weeklyWeekStart)}</h2><div class="small">Liste de tâches à répartir, puis transfert vers le planning actuel.</div></div><button class="secondary" onclick="moveWeeklyWeek(7)">Semaine suivante ›</button></div>
+ <div class="grid" style="margin-top:12px"><div><label>Début de semaine</label><input id="weeklyStart" type="date" value="${weeklyWeekStart}" onchange="changeWeeklyWeek(this.value)"></div><div><label>Bateau / lieu</label><select id="weeklyBoat">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div><div><label>Jour souhaité (facultatif)</label><select id="weeklyDay"><option value="">Répartition automatique</option>${days}</select></div><div><label>Opérateur (facultatif)</label><input id="weeklyOperator" placeholder="Nom de l'opérateur"></div><div style="grid-column:1/-1"><label>Tâche</label><textarea id="weeklyTaskText" rows="2" placeholder="Décrire la tâche à réaliser dans la semaine"></textarea></div><div style="grid-column:1/-1"><label>Commentaire (facultatif)</label><textarea id="weeklyTaskComment" rows="2"></textarea></div></div>
+ <div class="row" style="margin-top:10px"><button onclick="addWeeklyTask()">＋ Ajouter à la liste de la semaine</button><button class="secondary" onclick="autoDistributeWeekly()">⚖️ Répartir selon l'historique</button><button onclick="transferWeeklyTasks()">⇢ Transférer au planning actuel</button></div><div id="weeklyMsg" class="small"></div></div>
+ <div class="card"><h3>Liste de tâches de la semaine (${rows.length})</h3>${rows.length?rows.map(x=>`<div class="task"><div class="row"><div class="grow"><b>${esc(x.task)}</b><div class="small">⚓ ${esc(x.boat_name)} · 📅 ${x.planned_date?fmt(x.planned_date):"Jour à répartir"} · 👤 ${esc(x.operator_name||"Non renseigné")}</div>${x.task_comment?`<div class="small">💬 ${esc(x.task_comment)}</div>`:""}</div><span class="pill ${x.transferred_task_id?"ok":"warn"}">${x.transferred_task_id?"Transférée":"À planifier"}</span></div>${!x.transferred_task_id?`<button class="danger" style="margin-top:8px" onclick="deleteWeeklyTask('${x.id}')">Supprimer</button>`:""}</div>`).join(""):`<p class="muted">Aucune tâche préparée pour cette semaine.</p>`}</div>`;
+}
+function moveWeeklyWeek(n){weeklyWeekStart=addDays(weeklyWeekStart,n);renderCalendar()}
+function changeWeeklyWeek(v){if(v){weeklyWeekStart=startOfWeek(v);renderCalendar()}}
+async function addWeeklyTask(){
+ const task=document.getElementById("weeklyTaskText")?.value.trim(),boat=document.getElementById("weeklyBoat")?.value;
+ if(!task||!boat){setMsg("weeklyMsg","Le bateau/site et la description sont obligatoires.",true);return}
+ const desired=document.getElementById("weeklyDay")?.value||null;
+ const payload={week_start:weeklyWeekStart,boat_name:boat,operator_name:document.getElementById("weeklyOperator")?.value.trim()||null,task,task_comment:document.getElementById("weeklyTaskComment")?.value.trim()||null,planned_date:desired};
+ const {data,error}=await client.from("weekly_task_pool").insert(payload).select("*").single();
+ if(error){setMsg("weeklyMsg","Impossible d'ajouter la tâche : "+error.message,true);return}
+ weeklyPool.push(data);renderCalendar();
+}
+async function autoDistributeWeekly(){
+ const rows=weeklyPool.filter(x=>x.week_start===weeklyWeekStart&&!x.transferred_task_id);
+ if(!rows.length){setMsg("weeklyMsg","Aucune tâche non transférée à répartir.",true);return}
+ const start=weeklyWeekStart,days=[0,1,2,3,4,5,6].map(i=>addDays(start,i));
+ const history=tasks.filter(t=>t.task_date>=addDays(start,-56)&&t.task_date<start);
+ const loads={};days.forEach(d=>loads[d]=tasks.filter(t=>t.task_date===d&&t.status!=="done").length);
+ for(const x of rows){
+  if(x.planned_date)continue;
+  const same=days.filter(d=>{const wd=new Date(d+"T12:00:00").getDay();return wd!==0;});
+  same.sort((a,b)=>{
+   const wa=new Date(a+"T12:00:00").getDay(),wb=new Date(b+"T12:00:00").getDay();
+   const ha=history.filter(t=>t.boat_name===x.boat_name&&new Date(t.task_date+"T12:00:00").getDay()===wa).length;
+   const hb=history.filter(t=>t.boat_name===x.boat_name&&new Date(t.task_date+"T12:00:00").getDay()===wb).length;
+   return (loads[a]+ha)-(loads[b]+hb);
+  });
+  const date=same[0];const {error}=await client.from("weekly_task_pool").update({planned_date:date}).eq("id",x.id);
+  if(error){setMsg("weeklyMsg","Erreur de répartition : "+error.message,true);return}
+  x.planned_date=date;loads[date]=(loads[date]||0)+1;
+ }
+ renderCalendar();
+}
+async function transferWeeklyTasks(){
+ const rows=weeklyPool.filter(x=>x.week_start===weeklyWeekStart&&!x.transferred_task_id);
+ if(!rows.length){alert("Aucune tâche à transférer. Les tâches ont peut-être déjà été transférées.");return}
+ if(rows.some(x=>!x.planned_date)){await autoDistributeWeekly();return}
+ if(!confirm(`Transférer ${rows.length} tâche(s) vers le planning actuel ?`))return;
+ for(const x of rows){
+  const {data,error}=await client.from("tasks").insert({task_date:x.planned_date,boat_name:x.boat_name,operator_name:x.operator_name||null,task:x.task,task_comment:x.task_comment||null,status:"todo",photo_urls:[]}).select("id").single();
+  if(error){alert("Transfert interrompu : "+error.message);return}
+  const upd=await client.from("weekly_task_pool").update({transferred_task_id:data.id}).eq("id",x.id);
+  if(upd.error){alert("La tâche a été créée mais son transfert n'a pas été marqué : "+upd.error.message);return}
+  x.transferred_task_id=data.id;
+ }
+ await refresh();calendarMode="weekly";renderCalendar();alert("✓ Tâches transférées au planning actuel.");
+}
+async function deleteWeeklyTask(id){if(!confirm("Supprimer cette tâche de la liste hebdomadaire ?"))return;const {error}=await client.from("weekly_task_pool").delete().eq("id",id);if(error){alert("Suppression impossible : "+error.message);return}weeklyPool=weeklyPool.filter(x=>x.id!==id);renderCalendar()}
 function renderBoatTaskBoard(){
  const panel=document.getElementById("boatTaskBoard");
  if(!panel)return;

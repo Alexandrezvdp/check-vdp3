@@ -117,7 +117,7 @@ const ETOILE=[
 let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],inventoryCatalog=[],inventoryRecords=[],filterInventoryCatalog=[],filterInventoryRecords=[],inventoryMode="oil",spareParts=[],sparePartsQuery={part:"",position:"",model:""},sparePartsPage="stock",purchaseOrders=[],purchaseOrderDraftItems=[],purchaseOrderHeader={company:"",date:"",internalRef:"",offer:"",comments:""},checklistSubmissions=[],auditRecords=[];
 let checklistGeneralComment="";
 let currentBoat=null,currentItems=[],answers={},photos={},checklistTechName="",checklistDate="";
-let calDate=new Date(); let selectedDate=isoDate(new Date()); let calendarMode="daily",weeklyPool=[]; let weeklyWeekStart=isoDate(new Date()); let weeklyRangeEnd=addDays(weeklyWeekStart,6), weeklyAutoEnabled=false;
+let calDate=new Date(); let selectedDate=isoDate(new Date()); let calendarMode="daily",weeklyPool=[],weeklyUnavailable=[]; let weeklyWeekStart=isoDate(new Date()); let weeklyRangeEnd=addDays(weeklyWeekStart,6), weeklyAutoEnabled=false;
 
 function isoDate(d){return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
@@ -137,6 +137,7 @@ async function loadData(){
  r=await client.from("tasks").select("*").order("task_date").order("created_at"); if(r.error)throw r.error; tasks=r.data||[];
  r=await client.from("weekly_task_pool").select("*").order("week_start").order("created_at");
  if(r.error){console.warn("Planning hebdomadaire indisponible :",r.error.message);weeklyPool=[];} else weeklyPool=r.data||[];
+ const ur=await client.from("weekly_planning_unavailability").select("*").order("start_date"); weeklyUnavailable=ur.error?[]:(ur.data||[]);
  const cfg=await client.from("weekly_planning_settings").select("*").eq("id",true).maybeSingle();
  if(!cfg.error && cfg.data){weeklyAutoEnabled=!!cfg.data.auto_enabled;weeklyWeekStart=cfg.data.start_date||weeklyWeekStart;weeklyRangeEnd=cfg.data.end_date||addDays(weeklyWeekStart,6);}
  await rolloverOverdueTasks();
@@ -213,10 +214,12 @@ function renderWeeklyMarkup(){
  const days=[];for(let d=weeklyWeekStart;d<=weeklyRangeEnd;d=addDays(d,1))days.push(`<option value="${d}">${fmt(d)}</option>`);
  return `<div class="card"><div class="row"><div class="grow"><h2 style="margin:0">🗓️ Planning hebdomadaire</h2><div class="small">Préparez une liste de tâches sur une période. En mode automatique, Supabase répartit les tâches et actualise le planning chaque jour à 22 h (heure de Paris).</div></div></div>
  <div class="grid" style="margin-top:12px"><div><label>1er jour</label><input id="weeklyStart" type="date" value="${weeklyWeekStart}" onchange="changeWeeklyRange()"></div><div><label>Dernier jour</label><input id="weeklyEnd" type="date" value="${weeklyRangeEnd}" onchange="changeWeeklyRange()"></div><div style="grid-column:1/-1;padding:10px;background:#eef7fb;border-radius:10px"><label style="display:flex;gap:10px;align-items:center;margin:0"><input id="weeklyAuto" type="checkbox" style="width:auto" ${weeklyAutoEnabled?'checked':''} onchange="saveWeeklyAuto(this.checked)"> Activer la répartition et la mise à jour automatiques à 22 h</label><div class="small" style="margin-top:5px">Les tâches non réalisées sont reportées au lendemain à 22 h. Les tâches de la liste sont transférées au planning à la veille de leur date prévue.</div></div>
- <div><label>Bateau / lieu</label><select id="weeklyBoat">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div><div><label>Jour souhaité (facultatif)</label><select id="weeklyDay"><option value="">Répartition automatique</option>${days.join("")}</select></div><div><label>Opérateur (facultatif)</label><input id="weeklyOperator" placeholder="Nom de l'opérateur"></div><div style="grid-column:1/-1"><label>Tâche</label><textarea id="weeklyTaskText" rows="2" placeholder="Décrire la tâche à réaliser pendant la période"></textarea></div><div style="grid-column:1/-1"><label>Commentaire (facultatif)</label><textarea id="weeklyTaskComment" rows="2"></textarea></div></div>
+ <div><label>Bateau / lieu</label><select id="weeklyBoat">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div><div><label>Jour souhaité (facultatif)</label><select id="weeklyDay"><option value="">Répartition automatique</option>${days.join("")}</select></div><div><label>Opérateur (facultatif)</label><input id="weeklyOperator" placeholder="Nom de l'opérateur"></div><div style="grid-column:1/-1"><label>Tâche</label><textarea id="weeklyTaskText" rows="2" placeholder="Décrire la tâche à réaliser pendant la période"></textarea></div><div style="grid-column:1/-1"><label>Commentaire (facultatif)</label><textarea id="weeklyTaskComment" rows="2"></textarea></div><div style="grid-column:1/-1"><label>Photo(s) de la tâche (facultatif)</label><input id="weeklyTaskPhotos" type="file" accept="image/*" capture="environment" multiple></div></div>
  <div class="row" style="margin-top:10px"><button onclick="addWeeklyTask()">＋ Ajouter à la liste</button><button class="secondary" onclick="autoDistributeWeekly()">⚖️ Répartir maintenant selon l'historique</button><button onclick="transferWeeklyTasks()">⇢ Transférer au planning</button></div><div id="weeklyMsg" class="small"></div></div>
- <div class="card"><h3>Liste des tâches (${rows.length})</h3>${rows.length?rows.map(x=>`<div class="task"><div class="row"><div class="grow"><b>${esc(x.task)}</b><div class="small">⚓ ${esc(x.boat_name)} · 📅 ${x.planned_date?fmt(x.planned_date):"À répartir automatiquement"} · 👤 ${esc(x.operator_name||"Non renseigné")}</div>${x.task_comment?`<div class="small">💬 ${esc(x.task_comment)}</div>`:""}</div><span class="pill ${x.transferred_task_id?"ok":"warn"}">${x.transferred_task_id?"Transférée":"À planifier"}</span></div>${!x.transferred_task_id?`<button class="danger" style="margin-top:8px" onclick="deleteWeeklyTask('${x.id}')">Supprimer</button>`:""}</div>`).join(""):`<p class="muted">Aucune tâche préparée pour cette période.</p>`}</div>`;
+ <div class="card"><h3>Indisponibilités bateaux / sites</h3><p class="small">Les jours indisponibles seront ignorés par la répartition automatique.</p><div class="grid"><div><label>Bateau / site</label><select id="weeklyUnavailableBoat">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div><div><label>Du</label><input id="weeklyUnavailableStart" type="date" value="${weeklyWeekStart}"></div><div><label>Au</label><input id="weeklyUnavailableEnd" type="date" value="${weeklyWeekStart}"></div><div><label>Motif (facultatif)</label><input id="weeklyUnavailableReason" placeholder="Maintenance, indisponibilité…"></div></div><button style="margin-top:8px" onclick="addWeeklyUnavailability()">＋ Ajouter une indisponibilité</button>${weeklyUnavailable.filter(u=>u.end_date>=weeklyWeekStart&&u.start_date<=weeklyRangeEnd).map(u=>`<div class="task"><b>${esc(u.boat_name)}</b> · ${esc(u.start_date)} → ${esc(u.end_date)} ${u.reason?"· "+esc(u.reason):""}<button class="danger" onclick="deleteWeeklyUnavailability('${u.id}')">Supprimer</button></div>`).join("")}</div><div class="card"><h3>Liste des tâches (${rows.length})</h3>${rows.length?rows.map(x=>`<div class="task"><div class="row"><div class="grow"><b>${esc(x.task)}</b><div class="small">⚓ ${esc(x.boat_name)} · 📅 ${x.planned_date?fmt(x.planned_date):"À répartir automatiquement"} · 👤 ${esc(x.operator_name||"Non renseigné")}</div>${x.task_comment?`<div class="small">💬 ${esc(x.task_comment)}</div>`:""}${Array.isArray(x.photo_urls)&&x.photo_urls.length?`<div class="small">📷 ${x.photo_urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">Voir photo ${i+1}</a>`).join(" · ")}</div>`:""}</div><span class="pill ${x.transferred_task_id?"ok":"warn"}">${x.transferred_task_id?"Transférée":"À planifier"}</span></div>${!x.transferred_task_id?`<button class="danger" style="margin-top:8px" onclick="deleteWeeklyTask('${x.id}')">Supprimer</button>`:""}</div>`).join(""):`<p class="muted">Aucune tâche préparée pour cette période.</p>`}</div>`;
 }
+async function addWeeklyUnavailability(){const boat=document.getElementById("weeklyUnavailableBoat")?.value,start_date=document.getElementById("weeklyUnavailableStart")?.value,end_date=document.getElementById("weeklyUnavailableEnd")?.value,reason=document.getElementById("weeklyUnavailableReason")?.value.trim()||null;if(!boat||!start_date||!end_date||end_date<start_date){alert("Vérifiez le bateau/site et les dates d’indisponibilité.");return}const {data,error}=await client.from("weekly_planning_unavailability").insert({boat_name:boat,start_date,end_date,reason}).select("*").single();if(error){alert("Impossible d’enregistrer l’indisponibilité. Exécutez le fichier planning_hebdomadaire.sql mis à jour dans Supabase. Détail : "+error.message);return}weeklyUnavailable.push(data);renderCalendar()}
+async function deleteWeeklyUnavailability(id){if(!confirm("Supprimer cette indisponibilité ?"))return;const {error}=await client.from("weekly_planning_unavailability").delete().eq("id",id);if(error){alert(error.message);return}weeklyUnavailable=weeklyUnavailable.filter(x=>x.id!==id);renderCalendar()}
 async function changeWeeklyRange(){const a=document.getElementById('weeklyStart')?.value,b=document.getElementById('weeklyEnd')?.value;if(!a||!b)return;if(b<a){alert('Le dernier jour doit être égal ou postérieur au premier jour.');return}weeklyWeekStart=a;weeklyRangeEnd=b;await saveWeeklyAuto(weeklyAutoEnabled)}
 async function saveWeeklyAuto(enabled){
  weeklyAutoEnabled=enabled;
@@ -232,26 +235,29 @@ async function addWeeklyTask(){
  const task=document.getElementById("weeklyTaskText")?.value.trim(),boat=document.getElementById("weeklyBoat")?.value;
  if(!task||!boat){setMsg("weeklyMsg","Le bateau/site et la description sont obligatoires.",true);return}
  const desired=document.getElementById("weeklyDay")?.value||null;
- const payload={week_start:weeklyWeekStart,boat_name:boat,operator_name:document.getElementById("weeklyOperator")?.value.trim()||null,task,task_comment:document.getElementById("weeklyTaskComment")?.value.trim()||null,planned_date:desired};
+ const payload={week_start:weeklyWeekStart,boat_name:boat,operator_name:document.getElementById("weeklyOperator")?.value.trim()||null,task,task_comment:document.getElementById("weeklyTaskComment")?.value.trim()||null,planned_date:desired,photo_urls:[]};
  const {data,error}=await client.from("weekly_task_pool").insert(payload).select("*").single();
  if(error){setMsg("weeklyMsg","Impossible d'ajouter la tâche : "+error.message,true);return}
+ const urls=[];for(const f of [...(document.getElementById("weeklyTaskPhotos")?.files||[])]){const path=`weekly/${data.id}/${Date.now()}_${(f.name||"photo.jpg").replace(/[^a-zA-Z0-9._-]/g,"_")}`;const up=await client.storage.from("task-photos").upload(path,f,{upsert:false,contentType:f.type||"image/jpeg"});if(up.error){alert("Tâche ajoutée, mais une photo n'a pas pu être envoyée : "+up.error.message);continue}urls.push(client.storage.from("task-photos").getPublicUrl(path).data.publicUrl)}
+ if(urls.length){const ur=await client.from("weekly_task_pool").update({photo_urls:urls}).eq("id",data.id);if(ur.error){alert("Photos envoyées mais liens non enregistrés : "+ur.error.message)}else data.photo_urls=urls}
  weeklyPool.push(data);renderCalendar();
 }
 async function autoDistributeWeekly(){
  const rows=weeklyPool.filter(x=>{const d=x.planned_date||x.week_start;return d>=weeklyWeekStart&&d<=weeklyRangeEnd&&!x.transferred_task_id;});
  if(!rows.length){setMsg("weeklyMsg","Aucune tâche non transférée à répartir.",true);return}
  const start=weeklyWeekStart,days=[];for(let d=start;d<=weeklyRangeEnd;d=addDays(d,1))days.push(d);
- const history=tasks.filter(t=>t.task_date>=addDays(start,-56)&&t.task_date<start);
+ const history=tasks.filter(t=>t.status==="done"&&t.task_date>=addDays(start,-56)&&t.task_date<start);
  const loads={};days.forEach(d=>loads[d]=tasks.filter(t=>t.task_date===d&&t.status!=="done").length);
  for(const x of rows){
   if(x.planned_date)continue;
-  const same=days.filter(d=>{const wd=new Date(d+"T12:00:00").getDay();return wd!==0;});
+  const same=days.filter(d=>{const wd=new Date(d+"T12:00:00").getDay();return wd!==0&&!weeklyUnavailable.some(u=>u.boat_name===x.boat_name&&d>=u.start_date&&d<=u.end_date);});
   same.sort((a,b)=>{
    const wa=new Date(a+"T12:00:00").getDay(),wb=new Date(b+"T12:00:00").getDay();
    const ha=history.filter(t=>t.boat_name===x.boat_name&&new Date(t.task_date+"T12:00:00").getDay()===wa).length;
    const hb=history.filter(t=>t.boat_name===x.boat_name&&new Date(t.task_date+"T12:00:00").getDay()===wb).length;
    return (loads[a]+ha)-(loads[b]+hb);
   });
+  if(!same.length){setMsg("weeklyMsg",`Aucun jour disponible pour ${x.boat_name} : modifiez les indisponibilités ou choisissez une date.`,true);continue}
   const date=same[0];const {error}=await client.from("weekly_task_pool").update({planned_date:date}).eq("id",x.id);
   if(error){setMsg("weeklyMsg","Erreur de répartition : "+error.message,true);return}
   x.planned_date=date;loads[date]=(loads[date]||0)+1;
@@ -264,7 +270,7 @@ async function transferWeeklyTasks(){
  if(rows.some(x=>!x.planned_date)){await autoDistributeWeekly();return}
  if(!confirm(`Transférer ${rows.length} tâche(s) vers le planning actuel ?`))return;
  for(const x of rows){
-  const {data,error}=await client.from("tasks").insert({task_date:x.planned_date,boat_name:x.boat_name,operator_name:x.operator_name||null,task:x.task,task_comment:x.task_comment||null,status:"todo",photo_urls:[]}).select("id").single();
+  const {data,error}=await client.from("tasks").insert({task_date:x.planned_date,boat_name:x.boat_name,operator_name:x.operator_name||null,task:x.task,task_comment:x.task_comment||null,status:"todo",photo_urls:Array.isArray(x.photo_urls)?x.photo_urls:[]}).select("id").single();
   if(error){alert("Transfert interrompu : "+error.message);return}
   const upd=await client.from("weekly_task_pool").update({transferred_task_id:data.id}).eq("id",x.id);
   if(upd.error){alert("La tâche a été créée mais son transfert n'a pas été marqué : "+upd.error.message);return}
@@ -385,7 +391,7 @@ async function saveNewTask(){
  const button=document.querySelector('#addTaskForm button:not(.secondary)');
  button?.setAttribute('disabled','disabled');
  setMsg("addTaskMsg","Enregistrement de la tâche…");
- const {data:created,error}=await client.from("tasks").insert({task_date:date,boat_name:boat,operator_name:operator||null,task,task_comment:taskComment,status:"todo",photo_urls:[]}).select("id").single();
+ const {data:created,error}=await client.from("tasks").insert({task_date:date,boat_name:boat,operator_name:operator||null,task,task_comment:taskComment,status:"todo",photo_urls:Array.isArray(x.photo_urls)?x.photo_urls:[]}).select("id").single();
  if(error){setMsg("addTaskMsg","Impossible d'ajouter la tâche : "+error.message,true);button?.removeAttribute('disabled');return}
  const urls=[];
  for(let i=0;i<files.length;i++){

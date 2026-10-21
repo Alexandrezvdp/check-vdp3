@@ -117,7 +117,7 @@ const ETOILE=[
 let profile=null,boats=[],items=[],tasks=[],levelRecords=[],temperatureRecords=[],inventoryCatalog=[],inventoryRecords=[],filterInventoryCatalog=[],filterInventoryRecords=[],inventoryMode="oil",spareParts=[],sparePartsQuery={part:"",position:"",model:""},sparePartsPage="stock",purchaseOrders=[],purchaseOrderDraftItems=[],purchaseOrderHeader={company:"",date:"",internalRef:"",offer:"",comments:""},checklistSubmissions=[],auditRecords=[];
 let checklistGeneralComment="";
 let currentBoat=null,currentItems=[],answers={},photos={},checklistTechName="",checklistDate="";
-let calDate=new Date(); let selectedDate=isoDate(new Date()); let calendarMode="daily",weeklyPool=[]; let weeklyWeekStart=isoDate(new Date());
+let calDate=new Date(); let selectedDate=isoDate(new Date()); let calendarMode="daily",weeklyPool=[]; let weeklyWeekStart=isoDate(new Date()); let weeklyRangeEnd=addDays(weeklyWeekStart,6), weeklyAutoEnabled=false;
 
 function isoDate(d){return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
@@ -137,6 +137,8 @@ async function loadData(){
  r=await client.from("tasks").select("*").order("task_date").order("created_at"); if(r.error)throw r.error; tasks=r.data||[];
  r=await client.from("weekly_task_pool").select("*").order("week_start").order("created_at");
  if(r.error){console.warn("Planning hebdomadaire indisponible :",r.error.message);weeklyPool=[];} else weeklyPool=r.data||[];
+ const cfg=await client.from("weekly_planning_settings").select("*").eq("id",true).maybeSingle();
+ if(!cfg.error && cfg.data){weeklyAutoEnabled=!!cfg.data.auto_enabled;weeklyWeekStart=cfg.data.start_date||weeklyWeekStart;weeklyRangeEnd=cfg.data.end_date||addDays(weeklyWeekStart,6);}
  await rolloverOverdueTasks();
  r=await client.from("level_records").select("*").order("created_at",{ascending:false}); if(r.error)throw r.error; levelRecords=r.data||[];
  r=await client.from("temperature_records").select("*").order("created_at",{ascending:false}); if(r.error){console.warn("Suivi des températures indisponible :",r.error.message);temperatureRecords=[];} else temperatureRecords=r.data||[];
@@ -202,22 +204,30 @@ function renderCalendar(){
  const monthName=calDate.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
  let cells="",d=new Date(start);
  for(let i=0;i<42;i++){let ds=isoDate(d), ts=tasks.filter(t=>t.task_date===ds);cells+=`<div class="day ${d.getMonth()!==m?"other":""} ${ds===selectedDate?"sel":""}" onclick="selectDay('${ds}')"><div class="num">${d.getDate()}</div>${ts.slice(0,3).map(t=>`<div class="task-dot ${t.status==="done"?"task-done":""}">${t.status==="done"?"✓":"•"} ${esc(t.boat_name||"")}</div>`).join("")}${ts.length>3?`<div class="small">+${ts.length-3}</div>`:""}</div>`;d.setDate(d.getDate()+1)}
- document.getElementById("page-calendar").innerHTML=`<div class="card"><h2 style="margin-top:0">📅 Planning</h2><div class="row"><button class="${calendarMode==="daily"?"":"secondary"}" onclick="setCalendarMode('daily')">Planning actuel</button><button class="${calendarMode==="weekly"?"":"secondary"}" onclick="setCalendarMode('weekly')">Planning hebdomadaire</button></div></div>`+(calendarMode==="weekly"?renderWeeklyMarkup():`<div class="card"><div class="calendar-head"><button class="secondary" onclick="moveMonth(-1)">‹</button><h2 style="margin:0;text-transform:capitalize">${monthName}</h2><button class="secondary" onclick="moveMonth(1)">›</button></div><div class="cal">${["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map(x=>`<div class="dow">${x}</div>`).join("")}${cells}</div></div><div class="card" id="boatTaskBoard"></div><div class="card" id="dayPanel"></div>`);
+ document.getElementById("page-calendar").innerHTML=`<div class="card"><h2 style="margin-top:0">📅 Planning</h2><div class="row"><button class="${calendarMode==="daily"?"":"secondary"}" onclick="setCalendarMode('daily')">Planning</button><button class="${calendarMode==="weekly"?"":"secondary"}" onclick="setCalendarMode('weekly')">Planning hebdomadaire</button></div></div>`+(calendarMode==="weekly"?renderWeeklyMarkup():`<div class="card"><div class="calendar-head"><button class="secondary" onclick="moveMonth(-1)">‹</button><h2 style="margin:0;text-transform:capitalize">${monthName}</h2><button class="secondary" onclick="moveMonth(1)">›</button></div><div class="cal">${["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map(x=>`<div class="dow">${x}</div>`).join("")}${cells}</div></div><div class="card" id="boatTaskBoard"></div><div class="card" id="dayPanel"></div>`);
  if(calendarMode==="daily"){renderBoatTaskBoard();renderDayPanel();}
 }
 function setCalendarMode(mode){calendarMode=mode;renderCalendar()}
 function renderWeeklyMarkup(){
- weeklyWeekStart=startOfWeek(weeklyWeekStart);
- const weekEnd=addDays(weeklyWeekStart,6);
- const rows=weeklyPool.filter(x=>x.week_start===weeklyWeekStart);
- const days=[0,1,2,3,4,5,6].map(i=>{const d=addDays(weeklyWeekStart,i);return `<option value="${d}">${fmt(d)}</option>`}).join("");
- return `<div class="card"><div class="row"><button class="secondary" onclick="moveWeeklyWeek(-7)">‹ Semaine précédente</button><div class="grow"><h2 style="margin:0">🗓️ Semaine du ${fmt(weeklyWeekStart)}</h2><div class="small">Liste de tâches à répartir, puis transfert vers le planning actuel.</div></div><button class="secondary" onclick="moveWeeklyWeek(7)">Semaine suivante ›</button></div>
- <div class="grid" style="margin-top:12px"><div><label>Début de semaine</label><input id="weeklyStart" type="date" value="${weeklyWeekStart}" onchange="changeWeeklyWeek(this.value)"></div><div><label>Bateau / lieu</label><select id="weeklyBoat">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div><div><label>Jour souhaité (facultatif)</label><select id="weeklyDay"><option value="">Répartition automatique</option>${days}</select></div><div><label>Opérateur (facultatif)</label><input id="weeklyOperator" placeholder="Nom de l'opérateur"></div><div style="grid-column:1/-1"><label>Tâche</label><textarea id="weeklyTaskText" rows="2" placeholder="Décrire la tâche à réaliser dans la semaine"></textarea></div><div style="grid-column:1/-1"><label>Commentaire (facultatif)</label><textarea id="weeklyTaskComment" rows="2"></textarea></div></div>
- <div class="row" style="margin-top:10px"><button onclick="addWeeklyTask()">＋ Ajouter à la liste de la semaine</button><button class="secondary" onclick="autoDistributeWeekly()">⚖️ Répartir selon l'historique</button><button onclick="transferWeeklyTasks()">⇢ Transférer au planning actuel</button></div><div id="weeklyMsg" class="small"></div></div>
- <div class="card"><h3>Liste de tâches de la semaine (${rows.length})</h3>${rows.length?rows.map(x=>`<div class="task"><div class="row"><div class="grow"><b>${esc(x.task)}</b><div class="small">⚓ ${esc(x.boat_name)} · 📅 ${x.planned_date?fmt(x.planned_date):"Jour à répartir"} · 👤 ${esc(x.operator_name||"Non renseigné")}</div>${x.task_comment?`<div class="small">💬 ${esc(x.task_comment)}</div>`:""}</div><span class="pill ${x.transferred_task_id?"ok":"warn"}">${x.transferred_task_id?"Transférée":"À planifier"}</span></div>${!x.transferred_task_id?`<button class="danger" style="margin-top:8px" onclick="deleteWeeklyTask('${x.id}')">Supprimer</button>`:""}</div>`).join(""):`<p class="muted">Aucune tâche préparée pour cette semaine.</p>`}</div>`;
+ const rows=weeklyPool.filter(x=>{const d=x.planned_date||x.week_start;return d>=weeklyWeekStart&&d<=weeklyRangeEnd;});
+ const days=[];for(let d=weeklyWeekStart;d<=weeklyRangeEnd;d=addDays(d,1))days.push(`<option value="${d}">${fmt(d)}</option>`);
+ return `<div class="card"><div class="row"><div class="grow"><h2 style="margin:0">🗓️ Planning hebdomadaire</h2><div class="small">Préparez une liste de tâches sur une période. En mode automatique, Supabase répartit les tâches et actualise le planning chaque jour à 22 h (heure de Paris).</div></div></div>
+ <div class="grid" style="margin-top:12px"><div><label>1er jour</label><input id="weeklyStart" type="date" value="${weeklyWeekStart}" onchange="changeWeeklyRange()"></div><div><label>Dernier jour</label><input id="weeklyEnd" type="date" value="${weeklyRangeEnd}" onchange="changeWeeklyRange()"></div><div style="grid-column:1/-1;padding:10px;background:#eef7fb;border-radius:10px"><label style="display:flex;gap:10px;align-items:center;margin:0"><input id="weeklyAuto" type="checkbox" style="width:auto" ${weeklyAutoEnabled?'checked':''} onchange="saveWeeklyAuto(this.checked)"> Activer la répartition et la mise à jour automatiques à 22 h</label><div class="small" style="margin-top:5px">Les tâches non réalisées sont reportées au lendemain à 22 h. Les tâches de la liste sont transférées au planning à la veille de leur date prévue.</div></div>
+ <div><label>Bateau / lieu</label><select id="weeklyBoat">${BOATS.map(b=>`<option>${esc(b)}</option>`).join("")}</select></div><div><label>Jour souhaité (facultatif)</label><select id="weeklyDay"><option value="">Répartition automatique</option>${days.join("")}</select></div><div><label>Opérateur (facultatif)</label><input id="weeklyOperator" placeholder="Nom de l'opérateur"></div><div style="grid-column:1/-1"><label>Tâche</label><textarea id="weeklyTaskText" rows="2" placeholder="Décrire la tâche à réaliser pendant la période"></textarea></div><div style="grid-column:1/-1"><label>Commentaire (facultatif)</label><textarea id="weeklyTaskComment" rows="2"></textarea></div></div>
+ <div class="row" style="margin-top:10px"><button onclick="addWeeklyTask()">＋ Ajouter à la liste</button><button class="secondary" onclick="autoDistributeWeekly()">⚖️ Répartir maintenant selon l'historique</button><button onclick="transferWeeklyTasks()">⇢ Transférer au planning</button></div><div id="weeklyMsg" class="small"></div></div>
+ <div class="card"><h3>Liste des tâches (${rows.length})</h3>${rows.length?rows.map(x=>`<div class="task"><div class="row"><div class="grow"><b>${esc(x.task)}</b><div class="small">⚓ ${esc(x.boat_name)} · 📅 ${x.planned_date?fmt(x.planned_date):"À répartir automatiquement"} · 👤 ${esc(x.operator_name||"Non renseigné")}</div>${x.task_comment?`<div class="small">💬 ${esc(x.task_comment)}</div>`:""}</div><span class="pill ${x.transferred_task_id?"ok":"warn"}">${x.transferred_task_id?"Transférée":"À planifier"}</span></div>${!x.transferred_task_id?`<button class="danger" style="margin-top:8px" onclick="deleteWeeklyTask('${x.id}')">Supprimer</button>`:""}</div>`).join(""):`<p class="muted">Aucune tâche préparée pour cette période.</p>`}</div>`;
 }
-function moveWeeklyWeek(n){weeklyWeekStart=addDays(weeklyWeekStart,n);renderCalendar()}
-function changeWeeklyWeek(v){if(v){weeklyWeekStart=startOfWeek(v);renderCalendar()}}
+async function changeWeeklyRange(){const a=document.getElementById('weeklyStart')?.value,b=document.getElementById('weeklyEnd')?.value;if(!a||!b)return;if(b<a){alert('Le dernier jour doit être égal ou postérieur au premier jour.');return}weeklyWeekStart=a;weeklyRangeEnd=b;await saveWeeklyAuto(weeklyAutoEnabled)}
+async function saveWeeklyAuto(enabled){
+ weeklyAutoEnabled=enabled;
+ const a=document.getElementById('weeklyStart')?.value||weeklyWeekStart,b=document.getElementById('weeklyEnd')?.value||weeklyRangeEnd;
+ if(b<a){weeklyAutoEnabled=false;renderCalendar();alert('Le dernier jour doit être égal ou postérieur au premier jour.');return}
+ const {error}=await client.from('weekly_planning_settings').upsert({id:true,auto_enabled:enabled,start_date:a,end_date:b,updated_at:new Date().toISOString()},{onConflict:'id'});
+ if(error){weeklyAutoEnabled=!enabled;renderCalendar();alert('Impossible d’enregistrer le mode automatique. Exécutez le fichier planning_hebdomadaire.sql dans Supabase. Détail : '+error.message);return}
+ weeklyWeekStart=a;weeklyRangeEnd=b;setTimeout(()=>setMsg('weeklyMsg',enabled?'✓ Mode automatique activé. La mise à jour est exécutée côté serveur à 22 h, heure de Paris.':'Mode automatique désactivé.'),0);renderCalendar();
+}
+function moveWeeklyWeek(n){weeklyWeekStart=addDays(weeklyWeekStart,n);weeklyRangeEnd=addDays(weeklyRangeEnd,n);renderCalendar()}
+function changeWeeklyWeek(v){if(v){weeklyWeekStart=v;weeklyRangeEnd=addDays(v,6);renderCalendar()}}
 async function addWeeklyTask(){
  const task=document.getElementById("weeklyTaskText")?.value.trim(),boat=document.getElementById("weeklyBoat")?.value;
  if(!task||!boat){setMsg("weeklyMsg","Le bateau/site et la description sont obligatoires.",true);return}
@@ -228,9 +238,9 @@ async function addWeeklyTask(){
  weeklyPool.push(data);renderCalendar();
 }
 async function autoDistributeWeekly(){
- const rows=weeklyPool.filter(x=>x.week_start===weeklyWeekStart&&!x.transferred_task_id);
+ const rows=weeklyPool.filter(x=>{const d=x.planned_date||x.week_start;return d>=weeklyWeekStart&&d<=weeklyRangeEnd&&!x.transferred_task_id;});
  if(!rows.length){setMsg("weeklyMsg","Aucune tâche non transférée à répartir.",true);return}
- const start=weeklyWeekStart,days=[0,1,2,3,4,5,6].map(i=>addDays(start,i));
+ const start=weeklyWeekStart,days=[];for(let d=start;d<=weeklyRangeEnd;d=addDays(d,1))days.push(d);
  const history=tasks.filter(t=>t.task_date>=addDays(start,-56)&&t.task_date<start);
  const loads={};days.forEach(d=>loads[d]=tasks.filter(t=>t.task_date===d&&t.status!=="done").length);
  for(const x of rows){
@@ -249,7 +259,7 @@ async function autoDistributeWeekly(){
  renderCalendar();
 }
 async function transferWeeklyTasks(){
- const rows=weeklyPool.filter(x=>x.week_start===weeklyWeekStart&&!x.transferred_task_id);
+ const rows=weeklyPool.filter(x=>{const d=x.planned_date||x.week_start;return d>=weeklyWeekStart&&d<=weeklyRangeEnd&&!x.transferred_task_id;});
  if(!rows.length){alert("Aucune tâche à transférer. Les tâches ont peut-être déjà été transférées.");return}
  if(rows.some(x=>!x.planned_date)){await autoDistributeWeekly();return}
  if(!confirm(`Transférer ${rows.length} tâche(s) vers le planning actuel ?`))return;

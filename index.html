@@ -403,7 +403,7 @@ async function saveNewTask(){
  const button=document.querySelector('#addTaskForm button:not(.secondary)');
  button?.setAttribute('disabled','disabled');
  setMsg("addTaskMsg","Enregistrement de la tâche…");
- const {data:created,error}=await client.from("tasks").insert({task_date:date,boat_name:boat,operator_name:operator||null,task,task_comment:taskComment,status:"todo",photo_urls:Array.isArray(x.photo_urls)?x.photo_urls:[]}).select("id").single();
+ const {data:created,error}=await client.from("tasks").insert({task_date:date,boat_name:boat,operator_name:operator||null,task,task_comment:taskComment,status:"todo",photo_urls:[]}).select("id").single();
  if(error){setMsg("addTaskMsg","Impossible d'ajouter la tâche : "+error.message,true);button?.removeAttribute('disabled');return}
  const urls=[];
  for(let i=0;i<files.length;i++){

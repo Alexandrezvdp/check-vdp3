@@ -35,7 +35,7 @@ label{display:block;font-weight:700;font-size:13px;margin:9px 0 5px}
 .calendar-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:12px}.dow{font-size:11px;font-weight:800;color:var(--muted);text-align:center;padding:5px}.day{min-height:82px;background:white;border:1px solid var(--border);border-radius:8px;padding:7px;cursor:pointer}.day.other{opacity:.4}.day.sel{outline:3px solid #7bb5d0}.num{font-weight:800}.task-dot{font-size:11px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.task-done{text-decoration:line-through;opacity:.6}.task{border-left:5px solid var(--blue);padding:10px 12px;background:white;border:1px solid var(--border);border-radius:10px;margin:8px 0}.task.done{border-left-color:var(--ok)}
 table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;font-size:13px}
 .notice{padding:11px;border-radius:10px;background:#eef7fb;border:1px solid #cce3ed;margin:10px 0}.levelbox{background:#f8fbfc;border:1px solid #cfe0e7;border-radius:10px;padding:10px;margin-top:10px}.levelgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.error{background:#fff0f0;border-color:#f1caca;color:#8c2222}
-.login{max-width:430px;margin:50px auto}.right{text-align:right}
+.gantt{min-width:max-content}.gantt th{font-size:11px;background:#f2f6f8;position:sticky;top:0}.login{max-width:430px;margin:50px auto}.right{text-align:right}
 @media(max-width:600px){main{padding:0 9px 30px}.day{min-height:65px;padding:5px}.task-dot{font-size:9px}.boat{align-items:flex-start;flex-direction:column}.choices button{flex:1}}
 </style>
 </head>
@@ -62,6 +62,8 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <button data-page="spareparts">🔩 Pièces de rechange</button>
 <button data-page="purchaseorders">🧾 Bon de commande</button>
 <button data-page="audits">🔎 Audit bateaux</button>
+<button data-page="technical-stop">🛠️ Arrêt technique</button>
+<button data-page="notifications" id="notificationsNav">🔔 Notifications</button>
 <button data-page="admin" id="adminNav" class="hidden">⚙️ Administration</button>
 <button id="logoutBtn" class="secondary">Déconnexion</button>
 </div></nav>
@@ -74,6 +76,8 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <section id="page-spareparts" class="hidden"></section>
 <section id="page-purchaseorders" class="hidden"></section>
 <section id="page-audits" class="hidden"></section>
+<section id="page-technical-stop" class="hidden"></section>
+<section id="page-notifications" class="hidden"></section>
 <section id="page-admin" class="hidden"></section>
 <section id="page-checklist" class="hidden"></section>
 </main>
@@ -130,6 +134,7 @@ async function loadProfile(){
  if(error){console.error(error);profile={id:user.id,email:user.email,role:"operator"}} else profile=data;
  document.getElementById("userBox").innerHTML=esc(user.email)+"<br><b>"+esc(profile.role==="admin"?"Administrateur":"Opérateur")+"</b>";
  document.getElementById("adminNav").classList.toggle("hidden",profile.role!=="admin");
+ const notifNav=document.getElementById("notificationsNav"); if(notifNav)notifNav.classList.toggle("hidden",profile.role!=="admin");
 }
 async function loadData(){
  let r=await client.from("boats").select("*").order("sort_order"); if(r.error)throw r.error; boats=r.data||[];
@@ -160,6 +165,8 @@ function openAppPage(p){
  if(p==="spareparts")renderSpareParts();
  if(p==="purchaseorders")renderPurchaseOrders();
  if(p==="audits")renderAudits();
+ if(p==="technical-stop")renderTechnicalStop();
+ if(p==="notifications")renderNotifications();
  if(p==="admin")renderAdmin();
 }
 function renderHome(){
@@ -171,7 +178,8 @@ function renderHome(){
   ["inventory","🧰","Inventaire","Inventaire Huile & Graisse et filtres à huile GE Etoile."],
   ["spareparts","🔩","Pièces de rechange","Consulter le stock disponible et les pièces en cours de livraison."],
   ["purchaseorders","🧾","Bons de commande","Créer, imprimer et retrouver les bons de commande fournisseurs."],
-  ["audits","🔎","Audit bateaux","Créer, consulter et exporter les audits des bateaux."]
+  ["audits","🔎","Audit bateaux","Créer, consulter et exporter les audits des bateaux."],
+  ["technical-stop","🛠️","Arrêt technique","Planifier les interventions avec un diagramme de Gantt."]
  ];
  if(profile?.role==="admin")pages.push(["admin","⚙️","Administration","Gérer les utilisateurs et les paramètres d’accès."]);
  const html=`<div class="card"><h2 style="margin:0 0 6px">🏠 Accueil TECHNIQUE VDP</h2><p class="muted">Accédez directement à chaque espace de l’application.</p></div><div class="card"><div class="row" style="align-items:center;flex-wrap:wrap"><div class="grow"><h3 style="margin:0 0 5px">📊 Export global des données</h3><p class="muted" style="margin:0">Télécharger un classeur Excel avec un onglet par type de données de l’application.</p></div><button onclick="exportAllDataExcel()">⬇️ Exporter toutes les données en Excel</button></div><div id="exportAllMsg" class="small" style="margin-top:8px"></div></div><div class="grid">${pages.map(([id,ico,title,desc])=>`<div class="card"><div class="row" style="align-items:flex-start"><div style="font-size:28px">${ico}</div><div class="grow"><h3 style="margin:0 0 6px">${title}</h3><p class="muted" style="margin:0 0 12px">${desc}</p><button onclick="openAppPage('${id}')">Ouvrir ${title} →</button></div></div></div>`).join("")}</div><div class="card"><div class="row"><div class="grow"><h2 style="margin:0">⚓ Checklists des bateaux</h2><p class="muted">Technique disponible. Matin et Soir : à venir.</p></div></div><div class="grid">${boats.map(b=>`<div class="card boat"><div><h3>⚓ ${esc(b.name)}</h3><span class="pill">🔧 Technique</span><span class="pill">☀️ Matin — à venir</span><span class="pill">🌙 Soir — à venir</span></div><button onclick="openChecklist('${b.id}')">Ouvrir la checklist</button></div>`).join("")}</div></div>`;
@@ -454,8 +462,18 @@ async function saveNewTask(){
  renderCalendar();
  alert("✓ Tâche ajoutée au planning.");
 }
+async function notifyAdminsOfDeletion(task){
+ if(profile?.role==="admin")return;
+ const {data:admins,error:ae}=await client.from("profiles").select("id").eq("role","admin");
+ if(ae)throw ae;
+ if(!admins?.length)return;
+ const payload=admins.map(a=>({admin_id:a.id,deleted_by:profile?.id||null,deleted_by_name:profile?.full_name||profile?.name||profile?.email||"Utilisateur",task_id:task.id,task_title:task.title||task.task||"Tâche",boat_name:task.boat_name||task.site_name||"Non renseigné",task_date:task.task_date||null}));
+ const nr=await client.from("task_deletion_notifications").insert(payload);if(nr.error)throw nr.error;
+}
 async function deleteTask(id){
  if(!confirm("Supprimer cette tâche ?"))return;
+ const target=tasks.find(t=>String(t.id)===String(id));
+ 
  const r=await client.from("tasks").delete().eq("id",id);
  if(r.error){alert("Impossible de supprimer la tâche : "+r.error.message);return}
  await refresh();
@@ -1150,6 +1168,22 @@ async function refresh(){await loadData();renderHome();renderAdmin();renderCheck
 document.querySelectorAll("nav button[data-page]").forEach(b=>b.onclick=()=>openAppPage(b.dataset.page));
 document.getElementById("loginBtn").onclick=async()=>{let e=loginEmail.value.trim(),p=loginPassword.value;setMsg("loginMsg","Connexion…");let r=await client.auth.signInWithPassword({email:e,password:p});if(r.error)setMsg("loginMsg",r.error.message,true);else startApp()};
 document.getElementById("logoutBtn").onclick=async()=>{await client.auth.signOut();location.reload()};
+// Arrêt technique : gestion des opérations et diagramme de Gantt
+let technicalStops=[],technicalStopTasks=[],deletionNotifications=[];
+async function renderTechnicalStop(){
+ const root=document.getElementById("page-technical-stop");
+ root.innerHTML='<div class="card"><h2>🛠️ Arrêt technique</h2><p class="muted">Planifier et suivre les interventions de l’équipe et des prestataires extérieurs.</p><div class="grid"><div><label>Nom de l’arrêt</label><input id="stopName" placeholder="Ex. Arrêt technique Etoile"></div><div><label>Bateau / site</label><input id="stopBoat" list="stopBoats" placeholder="Bateau ou site"><datalist id="stopBoats">'+boats.map(b=>'<option value="'+esc(b.name)+'">').join('')+'</datalist></div><div><label>Début</label><input id="stopStart" type="date"></div><div><label>Fin</label><input id="stopEnd" type="date"></div></div><button style="margin-top:10px" onclick="createTechnicalStop()">＋ Créer l’arrêt</button><div id="stopMsg" class="small"></div></div><div id="stopProjects"></div>';
+ const [a,b]=await Promise.all([client.from("technical_stops").select("*").order("start_date"),client.from("technical_stop_tasks").select("*").order("start_date")]);
+ if(a.error||b.error){root.insertAdjacentHTML('beforeend','<div class="card error">Tables Arrêt technique non installées. Exécutez le fichier <b>arret_technique_notifications.sql</b> dans Supabase.</div>');return}
+ technicalStops=a.data||[];technicalStopTasks=b.data||[];
+ document.getElementById("stopProjects").innerHTML=technicalStops.map(st=>{const ts=technicalStopTasks.filter(t=>t.stop_id===st.id);const start=new Date(st.start_date+'T12:00:00'),end=new Date(st.end_date+'T12:00:00'),days=[];for(let d=new Date(start);d<=end&&days.length<90;d.setDate(d.getDate()+1))days.push(d.toISOString().slice(0,10));return `<div class="card"><div class="row"><div class="grow"><h3>${esc(st.name)} — ${esc(st.boat_name)}</h3><div class="small">${esc(st.start_date)} → ${esc(st.end_date)}</div></div><button onclick="addTechnicalStopTask('${st.id}')">＋ Ajouter une tâche</button></div><div style="overflow:auto"><table class="gantt"><thead><tr><th style="min-width:220px">Tâche / intervenant</th>${days.map(d=>`<th style="min-width:34px;text-align:center">${d.slice(8,10)}<br><small>${['D','L','M','M','J','V','S'][new Date(d+'T12:00:00').getDay()]}</small></th>`).join('')}</tr></thead><tbody>${ts.map(t=>{const a=Math.max(0,days.indexOf(t.start_date)),z=days.indexOf(t.end_date);return `<tr><td><b>${esc(t.title)}</b><div class="small">${esc(t.assignee||'Non affecté')} · ${t.external?'Extérieur':'Équipe'} · ${esc(t.status)}</div><button class="secondary" onclick="editTechnicalStopTask('${t.id}')">Modifier</button> <button class="danger" onclick="deleteTechnicalStopTask('${t.id}')">Supprimer</button></td>${days.map((d,i)=>`<td style="padding:3px;background:${i>=a&&z>=i?'#d5eaf5':'transparent'};border-radius:3px">${i===a?'▶':''}</td>`).join('')}</tr>`}).join('')||`<tr><td colspan="${days.length+1}">Aucune tâche pour cet arrêt.</td></tr>`}</tbody></table></div></div>`}).join('')||'<div class="card">Aucun arrêt technique créé.</div>';
+}
+async function createTechnicalStop(){const name=document.getElementById('stopName').value.trim(),boat_name=document.getElementById('stopBoat').value.trim(),start_date=document.getElementById('stopStart').value,end_date=document.getElementById('stopEnd').value;if(!name||!boat_name||!start_date||!end_date||end_date<start_date){alert('Renseignez le nom, le bateau/site et une période valide.');return}const r=await client.from('technical_stops').insert({name,boat_name,start_date,end_date,created_by:profile.id});if(r.error){alert(r.error.message);return}renderTechnicalStop()}
+async function addTechnicalStopTask(stop){const title=prompt('Intitulé de la tâche :');if(!title)return;const start_date=prompt('Date de début (AAAA-MM-JJ) :');if(!start_date)return;const end_date=prompt('Date de fin (AAAA-MM-JJ) :',start_date);if(!end_date)return;const assignee=prompt('Intervenant / entreprise :','Équipe interne')||'Non affecté';const external=confirm('Intervenant extérieur ? (Annuler = équipe interne)');const status=prompt('Statut : à faire / en cours / en attente / terminé','à faire')||'à faire';const r=await client.from('technical_stop_tasks').insert({stop_id:stop,title,start_date,end_date,assignee,external,status,created_by:profile.id});if(r.error)alert(r.error.message);else renderTechnicalStop()}
+async function editTechnicalStopTask(id){const t=technicalStopTasks.find(x=>x.id===id);if(!t)return;const status=prompt('Statut : à faire / en cours / en attente / terminé',t.status);if(status===null)return;const assignee=prompt('Intervenant / entreprise :',t.assignee||'');if(assignee===null)return;const r=await client.from('technical_stop_tasks').update({status,assignee}).eq('id',id);if(r.error)alert(r.error.message);else renderTechnicalStop()}
+async function deleteTechnicalStopTask(id){if(!confirm('Supprimer cette tâche d’arrêt technique ?'))return;const r=await client.from('technical_stop_tasks').delete().eq('id',id);if(r.error)alert(r.error.message);else renderTechnicalStop()}
+async function renderNotifications(){const root=document.getElementById('page-notifications');if(profile?.role!=='admin'){root.innerHTML='<div class="card">Les notifications de suppression sont réservées à l’administrateur.</div>';return}const r=await client.from('task_deletion_notifications').select('*').order('created_at',{ascending:false}).limit(100);if(r.error){root.innerHTML='<div class="card error">Impossible de charger les notifications. Vérifiez le SQL d’installation.</div>';return}deletionNotifications=r.data||[];root.innerHTML='<div class="card"><h2>🔔 Notifications de suppression</h2><p class="muted">Les suppressions effectuées par un administrateur ne sont ni signalées ni historisées.</p>'+ (deletionNotifications.map(n=>`<div class="item"><b>🗑 ${esc(n.task_title)}</b><div class="small">${esc(n.boat_name||'')} · ${esc(n.deleted_by_name||'Utilisateur')} · ${new Date(n.created_at).toLocaleString('fr-FR')}</div><span class="pill ${n.read_at?'ok':'warn'}">${n.read_at?'Lue':'Non lue'}</span>${n.read_at?'':` <button class="secondary" onclick="markDeletionRead('${n.id}')">Marquer comme lue</button>`}</div>`).join('')||'<p>Aucune notification.</p>')+'</div>'}
+async function markDeletionRead(id){const r=await client.from('task_deletion_notifications').update({read_at:new Date().toISOString()}).eq('id',id);if(r.error)alert(r.error.message);else renderNotifications()}
 async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderChecklists();renderCalendar();renderLevels();renderTemperatures();renderInventory();renderSpareParts();renderPurchaseOrders();renderChecklistHistory();renderAudits();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
 client.auth.onAuthStateChange((_event,session)=>{if(session&&!profile)startApp()});
 (async()=>{const {data:{session}}=await client.auth.getSession();if(session)startApp()})();

@@ -1184,12 +1184,34 @@ async function renderTechnicalStop(){
  const [a,b]=await Promise.all([client.from("technical_stops").select("*").order("start_date"),client.from("technical_stop_tasks").select("*").order("start_date")]);
  if(a.error||b.error){root.innerHTML='<div class="card error">Tables Arrêt technique non installées ou évolution SQL manquante. Exécutez le fichier <b>arret_technique_notifications.sql</b> mis à jour dans Supabase.</div>';return}
  technicalStops=a.data||[];technicalStopTasks=b.data||[];
- root.innerHTML='<div class="card"><h2>🛠️ Arrêt technique</h2><p class="muted">Gestion des arrêts, interventions internes et prestataires, coûts et suivi Gantt.</p></div>'+stopEditor()+
+ root.innerHTML='<div class="card"><h2>🛠️ Arrêt technique</h2><p class="muted">Gestion des arrêts, interventions internes et prestataires, coûts et suivi Gantt.</p></div><div id="stopCreate">'+stopEditor()+'</div>'+ 
  technicalStops.map(st=>{const ts=technicalStopTasks.filter(t=>t.stop_id===st.id);const days=[];for(let d=new Date(st.start_date+'T12:00:00'),e=new Date(st.end_date+'T12:00:00');d<=e&&days.length<120;d.setDate(d.getDate()+1))days.push(d.toISOString().slice(0,10));const total=ts.reduce((s,t)=>s+Number(t.cost||0),0);return `<div class="card"><div class="row"><div class="grow"><h3>${esc(st.name)} — ${esc(st.boat_name)}</h3><div class="small">${esc(st.start_date)} → ${esc(st.end_date)}${st.location?' · '+esc(st.location):''}</div><div class="small">${esc(st.description||'')}</div><b>Coût estimé : ${total.toLocaleString('fr-FR',{style:'currency',currency:'EUR'})}</b></div><button class="secondary" onclick="editTechnicalStop('${st.id}')">Modifier l’arrêt</button><button onclick="showTechnicalStopTaskForm('${st.id}')">＋ Ajouter une tâche</button><button class="secondary" onclick="exportTechnicalStopPdf('${st.id}')">⇩ Export PDF</button></div><div id="taskForm-${st.id}"></div><div style="overflow:auto"><table class="gantt"><thead><tr><th style="min-width:260px">Tâche / intervenant</th>${days.map(d=>`<th style="min-width:34px;text-align:center">${d.slice(8,10)}<br><small>${['D','L','M','M','J','V','S'][new Date(d+'T12:00:00').getDay()]}</small></th>`).join('')}</tr></thead><tbody>${ts.map(t=>{const a=days.indexOf(t.start_date),z=days.indexOf(t.end_date),color=t.color||'#3b82f6';return `<tr><td><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${esc(color)}"></span> <b>${esc(t.title)}</b><div class="small">${esc(t.assignee||'Non affecté')} · ${t.external?'Prestataire extérieur':'Équipe interne'} · ${esc(t.status)} · ${Number(t.cost||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})}</div>${t.description?`<div class="small">${esc(t.description)}</div>`:''}<button class="secondary" onclick="showTechnicalStopTaskForm('${st.id}','${t.id}')">Modifier</button> <button class="danger" onclick="deleteTechnicalStopTask('${t.id}')">Supprimer</button></td>${days.map((d,i)=>`<td style="padding:3px;background:${a>=0&&i>=a&&z>=i?color+'55':'transparent'};border-radius:3px">${i===a?'▶':''}</td>`).join('')}</tr>`}).join('')||`<tr><td colspan="${days.length+1}">Aucune tâche pour cet arrêt.</td></tr>`}</tbody></table></div></div>`}).join('')||'<div class="card">Aucun arrêt technique créé.</div>';
 }
-async function createTechnicalStop(){const name=stopName.value.trim(),boat_name=stopBoat.value.trim(),start_date=stopStart.value,end_date=stopEnd.value;if(!name||!boat_name||!start_date||!end_date||end_date<start_date){alert('Renseignez le nom, le bateau/site et une période valide.');return}const r=await client.from('technical_stops').insert({name,boat_name,start_date,end_date,location:stopLocation.value,description:stopDescription.value,budget:stopBudget.value?Number(stopBudget.value):null,created_by:profile.id});if(r.error){alert(r.error.message);return}renderTechnicalStop()}
-async function editTechnicalStop(id){const st=technicalStops.find(x=>x.id===id);if(!st)return;document.getElementById('page-technical-stop').insertAdjacentHTML('afterbegin',`<div id="stopEdit">${stopEditor(st)}</div>`);document.getElementById('stopEdit').scrollIntoView({behavior:'smooth'})}
-async function saveTechnicalStop(id){const name=stopName.value.trim(),boat_name=stopBoat.value.trim(),start_date=stopStart.value,end_date=stopEnd.value;if(!name||!boat_name||!start_date||!end_date||end_date<start_date){alert('Vérifiez les informations et les dates de l’arrêt.');return}const r=await client.from('technical_stops').update({name,boat_name,start_date,end_date,location:stopLocation.value,description:stopDescription.value,budget:stopBudget.value?Number(stopBudget.value):null}).eq('id',id);if(r.error)alert(r.error.message);else renderTechnicalStop()}
+function stopFormValues(){
+ const box=document.getElementById('stopCreate');
+ if(!box) return null;
+ const val=id=>box.querySelector('#'+id)?.value ?? '';
+ return {name:val('stopName').trim(),boat_name:val('stopBoat').trim(),start_date:val('stopStart'),end_date:val('stopEnd'),location:val('stopLocation'),description:val('stopDescription'),budget:val('stopBudget')?Number(val('stopBudget')):null};
+}
+async function createTechnicalStop(){
+ const v=stopFormValues();
+ if(!v||!v.name||!v.boat_name||!v.start_date||!v.end_date||v.end_date<v.start_date){alert('Renseignez le nom, le bateau/site et une période valide.');return}
+ const r=await client.from('technical_stops').insert({...v,created_by:profile.id});
+ if(r.error){alert('Enregistrement impossible : '+r.error.message);return}
+ await renderTechnicalStop();
+}
+async function editTechnicalStop(id){
+ const st=technicalStops.find(x=>x.id===id);if(!st)return;
+ const box=document.getElementById('stopCreate');if(!box)return;
+ box.innerHTML=stopEditor(st);box.scrollIntoView({behavior:'smooth',block:'start'});
+}
+async function saveTechnicalStop(id){
+ const v=stopFormValues();
+ if(!v||!v.name||!v.boat_name||!v.start_date||!v.end_date||v.end_date<v.start_date){alert('Vérifiez les informations et les dates de l’arrêt.');return}
+ const r=await client.from('technical_stops').update({name:v.name,boat_name:v.boat_name,start_date:v.start_date,end_date:v.end_date,location:v.location,description:v.description,budget:v.budget}).eq('id',id);
+ if(r.error){alert('Modification non enregistrée : '+r.error.message);return}
+ await renderTechnicalStop();
+}
 function showTechnicalStopTaskForm(stopId,taskId){const t=taskId?technicalStopTasks.find(x=>x.id===taskId):{};const box=document.getElementById('taskForm-'+stopId);if(!box)return;box.innerHTML=`<div class="item"><h3>${taskId?'Modifier':'Nouvelle'} tâche</h3><div class="grid">
 <div><label>Intitulé</label><input id="ttTitle" value="${esc(t.title||'')}"></div><div><label>Intervenant / société</label><input id="ttAssignee" value="${esc(t.assignee||'')}" placeholder="Équipe mécanique / Société X"></div>
 <div><label>Date de début</label>${dateInput('ttStart',t.start_date)}</div><div><label>Date de fin</label>${dateInput('ttEnd',t.end_date)}</div>
@@ -1198,7 +1220,16 @@ function showTechnicalStopTaskForm(stopId,taskId){const t=taskId?technicalStopTa
 <div><label>Coût (€)</label><input id="ttCost" type="number" min="0" step="0.01" value="${t.cost??''}"></div><div><label>Couleur Gantt</label><input id="ttColor" type="color" value="${esc(t.color||'#3b82f6')}"></div>
 <div style="grid-column:1/-1"><label>Description</label><textarea id="ttDescription">${esc(t.description||'')}</textarea></div><div style="grid-column:1/-1"><label>Commentaires / consignes</label><textarea id="ttComments">${esc(t.comments||'')}</textarea></div></div>
 <button onclick="saveTechnicalStopTask('${stopId}',${taskId?`'${taskId}'`:'null'})">Enregistrer la tâche</button> <button class="secondary" onclick="document.getElementById('taskForm-${stopId}').innerHTML=''">Annuler</button></div>`}
-async function saveTechnicalStopTask(stopId,taskId){const title=ttTitle.value.trim(),start_date=ttStart.value,end_date=ttEnd.value;if(!title||!start_date||!end_date||end_date<start_date){alert('Renseignez un intitulé et des dates valides.');return}const payload={title,start_date,end_date,assignee:ttAssignee.value.trim(),external:ttExternal.value==='true',status:ttStatus.value,cost:ttCost.value?Number(ttCost.value):0,color:ttColor.value,description:ttDescription.value,comments:ttComments.value};const r=taskId?await client.from('technical_stop_tasks').update(payload).eq('id',taskId):await client.from('technical_stop_tasks').insert({...payload,stop_id:stopId,created_by:profile.id});if(r.error){alert(r.error.message);return}renderTechnicalStop()}
+async function saveTechnicalStopTask(stopId,taskId){
+ const box=document.getElementById('taskForm-'+stopId);if(!box)return;
+ const val=id=>box.querySelector('#'+id)?.value ?? '';
+ const title=val('ttTitle').trim(),start_date=val('ttStart'),end_date=val('ttEnd');
+ if(!title||!start_date||!end_date||end_date<start_date){alert('Renseignez un intitulé et des dates valides.');return}
+ const payload={title,start_date,end_date,assignee:val('ttAssignee').trim(),external:val('ttExternal')==='true',status:val('ttStatus'),cost:val('ttCost')?Number(val('ttCost')):0,color:val('ttColor'),description:val('ttDescription'),comments:val('ttComments')};
+ const r=taskId?await client.from('technical_stop_tasks').update(payload).eq('id',taskId):await client.from('technical_stop_tasks').insert({...payload,stop_id:stopId,created_by:profile.id});
+ if(r.error){alert('Enregistrement de la tâche impossible : '+r.error.message);return}
+ await renderTechnicalStop();
+}
 async function addTechnicalStopTask(stop){showTechnicalStopTaskForm(stop)}
 async function editTechnicalStopTask(id){const t=technicalStopTasks.find(x=>x.id===id);if(t)showTechnicalStopTaskForm(t.stop_id,id)}
 async function deleteTechnicalStopTask(id){if(!confirm('Supprimer cette tâche d’arrêt technique ?'))return;const r=await client.from('technical_stop_tasks').delete().eq('id',id);if(r.error)alert(r.error.message);else renderTechnicalStop()}

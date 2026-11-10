@@ -37,6 +37,8 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 .notice{padding:11px;border-radius:10px;background:#eef7fb;border:1px solid #cce3ed;margin:10px 0}.levelbox{background:#f8fbfc;border:1px solid #cfe0e7;border-radius:10px;padding:10px;margin-top:10px}.levelgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.error{background:#fff0f0;border-color:#f1caca;color:#8c2222}
 .gantt{min-width:max-content}.gantt th{font-size:11px;background:#f2f6f8;position:sticky;top:0}.login{max-width:430px;margin:50px auto}.right{text-align:right}
 @media(max-width:600px){main{padding:0 9px 30px}.day{min-height:65px;padding:5px}.task-dot{font-size:9px}.boat{align-items:flex-start;flex-direction:column}.choices button{flex:1}}
+
+.gantt-color-picker{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}.gantt-color-picker input[type=color]{width:48px;height:38px;padding:3px;border:1px solid var(--border);border-radius:8px;background:#fff;cursor:pointer}.gantt-color-palette{display:grid;grid-template-columns:repeat(9,25px);gap:6px;max-width:275px}.gantt-color-swatch{width:25px;height:25px;min-width:25px;padding:0;border:2px solid #fff;border-radius:7px;background:var(--swatch);box-shadow:0 0 0 1px #9aa4aa;cursor:pointer}.gantt-color-swatch.selected{outline:3px solid var(--blue);outline-offset:2px;box-shadow:0 0 0 1px #fff}.gantt-color-swatch:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
 </style>
 </head>
 <body>
@@ -1217,9 +1219,18 @@ function showTechnicalStopTaskForm(stopId,taskId){const t=taskId?technicalStopTa
 <div><label>Date de début</label>${dateInput('ttStart',t.start_date)}</div><div><label>Date de fin</label>${dateInput('ttEnd',t.end_date)}</div>
 <div><label>Type d’intervenant</label><select id="ttExternal"><option value="false" ${!t.external?'selected':''}>Équipe interne</option><option value="true" ${t.external?'selected':''}>Société extérieure</option></select></div>
 <div><label>Statut</label><select id="ttStatus">${['à faire','en cours','en attente','terminé'].map(s=>`<option ${t.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
-<div><label>Coût (€)</label><input id="ttCost" type="number" min="0" step="0.01" value="${t.cost??''}"></div><div><label>Couleur Gantt</label><input id="ttColor" type="color" value="${esc(t.color||'#3b82f6')}"></div>
+<div><label>Coût (€)</label><input id="ttCost" type="number" min="0" step="0.01" value="${t.cost??''}"></div><div><label>Couleur Gantt</label><div class="gantt-color-picker"><input id="ttColor" type="color" value="${esc(t.color||'#3b82f6')}" aria-label="Choisir une couleur personnalisée" onchange="syncTechnicalStopColorPalette()"><div class="gantt-color-palette" role="group" aria-label="Palette de couleurs">${['#2563eb','#0ea5e9','#06b6d4','#14b8a6','#16a34a','#84cc16','#eab308','#f59e0b','#f97316','#ef4444','#ec4899','#d946ef','#8b5cf6','#6366f1','#64748b','#475569','#78350f','#111827'].map(c=>`<button type="button" class="gantt-color-swatch ${String(t.color||'#3b82f6').toLowerCase()===c?'selected':''}" style="--swatch:${c}" title="${c}" aria-label="Couleur ${c}" aria-pressed="${String(t.color||'#3b82f6').toLowerCase()===c}" onclick="chooseTechnicalStopColor('${c}',this)"></button>`).join('')}</div><small class="small">Choisissez une couleur dans la palette ou utilisez le sélecteur personnalisé.</small></div></div>
 <div style="grid-column:1/-1"><label>Description</label><textarea id="ttDescription">${esc(t.description||'')}</textarea></div><div style="grid-column:1/-1"><label>Commentaires / consignes</label><textarea id="ttComments">${esc(t.comments||'')}</textarea></div></div>
 <button onclick="saveTechnicalStopTask('${stopId}',${taskId?`'${taskId}'`:'null'})">Enregistrer la tâche</button> <button class="secondary" onclick="document.getElementById('taskForm-${stopId}').innerHTML=''">Annuler</button></div>`}
+async function chooseTechnicalStopColor(color,button){
+ const box=button?.closest('.gantt-color-picker')||document.getElementById('ttColor')?.closest('.gantt-color-picker');
+ const input=box?.querySelector('#ttColor');if(!input)return;input.value=color;
+ box.querySelectorAll('.gantt-color-swatch').forEach(b=>{const active=b.title.toLowerCase()===color.toLowerCase();b.classList.toggle('selected',active);b.setAttribute('aria-pressed',String(active));});
+}
+function syncTechnicalStopColorPalette(){
+ const input=document.getElementById('ttColor');if(!input)return;const box=input.closest('.gantt-color-picker');
+ box?.querySelectorAll('.gantt-color-swatch').forEach(b=>{const active=b.title.toLowerCase()===input.value.toLowerCase();b.classList.toggle('selected',active);b.setAttribute('aria-pressed',String(active));});
+}
 async function saveTechnicalStopTask(stopId,taskId){
  const box=document.getElementById('taskForm-'+stopId);if(!box)return;
  const val=id=>box.querySelector('#'+id)?.value ?? '';

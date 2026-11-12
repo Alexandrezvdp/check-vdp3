@@ -65,6 +65,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <button data-page="purchaseorders">🧾 Bon de commande</button>
 <button data-page="audits">🔎 Audit bateaux</button>
 <button data-page="technical-stop">🛠️ Arrêt technique</button>
+<button data-page="counters">⏱️ Compteurs</button>
 <button data-page="notifications" id="notificationsNav">🔔 Notifications</button>
 <button data-page="admin" id="adminNav" class="hidden">⚙️ Administration</button>
 <button id="logoutBtn" class="secondary">Déconnexion</button>
@@ -79,6 +80,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px so
 <section id="page-purchaseorders" class="hidden"></section>
 <section id="page-audits" class="hidden"></section>
 <section id="page-technical-stop" class="hidden"></section>
+<section id="page-counters" class="hidden"></section>
 <section id="page-notifications" class="hidden"></section>
 <section id="page-admin" class="hidden"></section>
 <section id="page-checklist" class="hidden"></section>
@@ -168,6 +170,7 @@ function openAppPage(p){
  if(p==="purchaseorders")renderPurchaseOrders();
  if(p==="audits")renderAudits();
  if(p==="technical-stop")renderTechnicalStop();
+ if(p==="counters")renderCounters();
  if(p==="notifications")renderNotifications();
  if(p==="admin")renderAdmin();
 }
@@ -181,7 +184,8 @@ function renderHome(){
   ["spareparts","🔩","Pièces de rechange","Consulter le stock disponible et les pièces en cours de livraison."],
   ["purchaseorders","🧾","Bons de commande","Créer, imprimer et retrouver les bons de commande fournisseurs."],
   ["audits","🔎","Audit bateaux","Créer, consulter et exporter les audits des bateaux."],
-  ["technical-stop","🛠️","Arrêt technique","Planifier les interventions avec un diagramme de Gantt."]
+  ["technical-stop","🛠️","Arrêt technique","Planifier les interventions avec un diagramme de Gantt."],
+  ["counters","⏱️","Compteurs","Relevés hebdomadaires des bateaux et mensuels du site VDP, avec graphiques d’évolution."]
  ];
  if(profile?.role==="admin")pages.push(["admin","⚙️","Administration","Gérer les utilisateurs et les paramètres d’accès."]);
  const html=`<div class="card"><h2 style="margin:0 0 6px">🏠 Accueil TECHNIQUE VDP</h2><p class="muted">Accédez directement à chaque espace de l’application.</p></div><div class="card"><div class="row" style="align-items:center;flex-wrap:wrap"><div class="grow"><h3 style="margin:0 0 5px">📊 Export global des données</h3><p class="muted" style="margin:0">Télécharger un classeur Excel avec un onglet par type de données de l’application.</p></div><button onclick="exportAllDataExcel()">⬇️ Exporter toutes les données en Excel</button></div><div id="exportAllMsg" class="small" style="margin-top:8px"></div></div><div class="grid">${pages.map(([id,ico,title,desc])=>`<div class="card"><div class="row" style="align-items:flex-start"><div style="font-size:28px">${ico}</div><div class="grow"><h3 style="margin:0 0 6px">${title}</h3><p class="muted" style="margin:0 0 12px">${desc}</p><button onclick="openAppPage('${id}')">Ouvrir ${title} →</button></div></div></div>`).join("")}</div><div class="card"><div class="row"><div class="grow"><h2 style="margin:0">⚓ Checklists des bateaux</h2><p class="muted">Technique disponible. Matin et Soir : à venir.</p></div></div><div class="grid">${boats.map(b=>`<div class="card boat"><div><h3>⚓ ${esc(b.name)}</h3><span class="pill">🔧 Technique</span><span class="pill">☀️ Matin — à venir</span><span class="pill">🌙 Soir — à venir</span></div><button onclick="openChecklist('${b.id}')">Ouvrir la checklist</button></div>`).join("")}</div></div>`;
@@ -1274,6 +1278,92 @@ async function markDeletionRead(id){const r=await client.from('task_deletion_not
 async function startApp(){document.getElementById("loginView").classList.add("hidden");document.getElementById("appView").classList.remove("hidden");try{await loadProfile();await loadData();renderHome();renderChecklists();renderCalendar();renderLevels();renderTemperatures();renderInventory();renderSpareParts();renderPurchaseOrders();renderChecklistHistory();renderAudits();if(profile.role==="admin")renderAdmin()}catch(e){alert("Erreur de chargement : "+e.message)}}
 client.auth.onAuthStateChange((_event,session)=>{if(session&&!profile)startApp()});
 (async()=>{const {data:{session}}=await client.auth.getSession();if(session)startApp()})();
+
+// MODULE COMPTEURS : relevés hebdomadaires des bateaux et mensuels du site VDP
+const COUNTER_BOATS=[
+ {key:"Paris Montmartre",label:"Paris Montmartre",metrics:[["me_bd","M.E Bd (h)"],["me_td","M.E Td (h)"],["elec_ac","Elec. AC (KWh)"],["elec_dc","Elec. DC (KWh)"]]},
+ {key:"Paris Montparnasse",label:"Paris Montparnasse",metrics:[["me_bd","M.E Bd (h)"],["me_td","M.E Td (h)"],["elec_ac","Elec. AC (KWh)"],["elec_dc","Elec. DC (KWh)"]]},
+ {key:"Paris Iéna",label:"Paris Iéna",metrics:[["me_bd","M.E Bd (h)"],["me_td","M.E Td (h)"],["elec_ac","Elec. AC (KWh)"],["elec_dc","Elec. DC (KWh)"]]},
+ {key:"Paris Etoile",label:"Paris Etoile",metrics:[["ge_bd","G.E Bd (h)"],["ge_td","G.E Td (h)"],["visit_500_bd","Visite 500 h Bd"],["visit_500_td","Visite 500 h Td"],["visit_200","Visite 200 h"],["go_in","G.O in (l)"]],service:true},
+ {key:"Paris Trocadéro",label:"Paris Trocadéro",metrics:[["me_bd","M.E Bd (h)"],["me_td","M.E Td (h)"],["elec_ac","Elec. AC (KWh)"],["elec_dc","Elec. DC (KWh)"]]}
+];
+const COUNTER_SITE_METRICS=[
+ "Eau - Francette","Eau - Ponton Vedette","Eau - Café","Eau - Conteneur préparation Café",
+ "Electricité (Kwh) - Cuisine FRANCETTE","Electricité (Kwh) - Restaurant FRANCETTE","Electricité (Kwh) - Rooftop FRANCETTE",
+ "Electricité (Kwh) - Café KFE","Electricité (Kwh) - Conteneur Stock KFE","Electricité (Kwh) - Billeterie","Electricité (Kwh) - Gustave",
+ "Electricité (Kwh) - Compteur Générale Ponton Vedette (Nouveau compteur)",
+ "Electricité (Kwh) - Prise AC 63A Gustave 1 ELEC BAT","Electricité (Kwh) - Prise AC 63A Gustave 2 ELEC BAT","Electricité (Kwh) - Eclairage Crevette + locaux poubelles",
+ "Electricité (Kwh) - Prise DC ponton Vedette (Recharge bateaux électriques de jour) - Prise DC Aval n°1",
+ "Electricité (Kwh) - Prise DC ponton Vedette (Recharge bateaux électriques de jour) - Prise DC Aval n°2",
+ "Electricité (Kwh) - Prise DC ponton Vedette (Recharge bateaux électriques de jour) - Prise DC Amont n°1",
+ "Electricité (Kwh) - Prise DC ponton Vedette (Recharge bateaux électriques de jour) - Prise DC Amont n°2",
+ "Electricité (Kwh) - Prise AC 250A ponton Vedette et Gustave (Recharge bateaux électriques de nuit)"
+];
+let counterTab="Paris Montmartre",counterRows=[],counterPeriodSelection="";
+function counterDateKey(type,val){return type==="week"?String(val):String(val).slice(0,7)}
+function counterCurrentWeek(){const d=new Date(),x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));x.setUTCDate(x.getUTCDate()+4-(x.getUTCDay()||7));const y=new Date(Date.UTC(x.getUTCFullYear(),0,1));const w=Math.ceil((((x-y)/86400000)+1)/7);return `${x.getUTCFullYear()}-W${String(w).padStart(2,"0")}` }
+function counterPeriodInput(){
+ const isSite=counterTab==="Site VDP";
+ return isSite?`<label>Mois du relevé</label><input id="counterPeriod" type="month" value="${counterPeriodSelection||new Date().toISOString().slice(0,7)}">`:`<label>Semaine du relevé</label><input id="counterPeriod" type="week" value="${counterPeriodSelection||counterCurrentWeek()}">`;
+}
+async function renderCounters(){
+ const root=document.getElementById("page-counters");if(!root)return;
+ root.innerHTML=`<div class="card"><h2>⏱️ Compteurs</h2><p class="muted">Saisissez les relevés des bateaux chaque semaine et ceux du site VDP chaque mois. Les graphiques montrent l’évolution des index dans le temps.</p>
+ <div class="row" style="gap:6px;flex-wrap:wrap">${[...COUNTER_BOATS.map(x=>x.label),"Site VDP"].map(x=>`<button class="${counterTab===x?'':'secondary'}" onclick="selectCounterTab('${x.replace(/'/g,"\\'")}')">${esc(x)}</button>`).join("")}</div></div><div id="counterPanel" class="card">Chargement des relevés…</div>`;
+ await loadCounterPanel();
+}
+async function selectCounterTab(tab){counterTab=tab;counterPeriodSelection="";await renderCounters()}
+async function loadCounterPanel(){
+ const panel=document.getElementById("counterPanel");if(!panel)return;
+ const {data,error}=await client.from("counter_readings").select("*").eq("asset",counterTab).order("period_key",{ascending:true});
+ if(error){panel.innerHTML=`<div class="notice error">La table des compteurs n'est pas encore installée. Exécutez le fichier <b>compteurs.sql</b> dans Supabase → SQL Editor. Détail : ${esc(error.message)}</div>`;return}
+ counterRows=data||[];
+ const site=counterTab==="Site VDP",boat=COUNTER_BOATS.find(x=>x.label===counterTab);
+ const metrics=site?COUNTER_SITE_METRICS:boat.metrics;
+ const type=site?"month":"week";
+ const selectedPeriod=document.getElementById("counterPeriod")?.value || counterPeriodSelection || (site?new Date().toISOString().slice(0,7):counterCurrentWeek());
+ counterPeriodSelection=selectedPeriod;
+ const existing=counterRows.find(x=>x.period_type===type&&x.period_key===counterDateKey(type,selectedPeriod));
+ const key=existing?.period_key||"";
+ const fields=site?metrics.map((m,i)=>`<div class="grid" style="grid-template-columns:minmax(180px,1fr) minmax(130px,220px);align-items:end"><div><label>${esc(m)}</label></div><div><input type="number" step="0.01" id="counterMetric-${i}" value="${existing?.metrics?.[m]??''}" placeholder="Index compteur"></div></div>`).join(""):metrics.map(([k,label])=>`<div><label>${esc(label)}</label><input type="number" step="0.01" id="counterMetric-${k}" value="${existing?.metrics?.[k]??''}" placeholder="Index"></div>`).join("");
+ panel.innerHTML=`<div class="row"><div class="grow"><h3>${esc(counterTab)}</h3><p class="small">${site?"Relevés mensuels":"Relevés hebdomadaires"}</p></div></div>
+ <div class="card" style="background:#f8fbfc"><h3>＋ Saisir / modifier un relevé</h3>${counterPeriodInput()}<div class="${site?'':'grid'}" style="${site?'max-height:520px;overflow:auto;':''}">${fields}</div><label>Observations</label><textarea id="counterObservation" placeholder="Observations, anomalies, interventions…">${esc(existing?.observations||'')}</textarea><button onclick="saveCounterReading()">Enregistrer les relevés</button><span id="counterSaveMsg" class="small"></span></div>
+ ${boat?.service?renderEtoileServiceInfo():''}
+ <h3>Évolution des compteurs</h3><div class="grid"><div><label>Compteur à afficher</label><select id="counterChartMetric" onchange="drawCounterChart()">${(site?metrics:metrics.map(x=>x[1])).map((m,i)=>`<option value="${site?m:metrics[i][0]}">${esc(m)}</option>`).join("")}</select></div></div><div id="counterChart" style="margin-top:12px"></div>
+ <h3>Historique des relevés</h3><div style="overflow:auto"><table><thead><tr><th>${site?"Mois":"Semaine"}</th>${(site?["Nombre d’index renseignés"]:metrics.map(x=>Array.isArray(x)?x[1]:x)).map(x=>`<th>${esc(x)}</th>`).join("")}<th>Observations</th></tr></thead><tbody>${counterRows.map(r=>`<tr><td>${esc(r.period_key)}</td>${site?`<td>${Object.keys(r.metrics||{}).length}</td>`:metrics.map(x=>`<td>${esc(String(r.metrics?.[x[0]]??"—"))}</td>`).join("")}<td>${esc(r.observations||"")}</td></tr>`).join("")||`<tr><td colspan="${(site?3:metrics.length+2)}">Aucun relevé enregistré.</td></tr>`}</tbody></table></div>`;
+ document.getElementById("counterPeriod").addEventListener("change",()=>loadCounterPanel());
+ drawCounterChart();
+}
+function renderEtoileServiceInfo(){
+ const rows=counterRows.filter(r=>r.asset==="Paris Etoile").sort((a,b)=>b.period_key.localeCompare(a.period_key));
+ const latest=rows[0]?.metrics||{};
+ const max=(k)=>Math.max(0,...rows.map(r=>Number(r.metrics?.[k]||0)));
+ const oilBd=500-(max("ge_bd")-max("visit_500_bd")),oilTd=500-(max("ge_td")-max("visit_500_td")),filter=200-(max("ge_bd")-max("visit_200"));
+ return `<div class="card"><h3>🛠️ Vidanges et remplacement des filtres — Paris Étoile</h3><div class="grid"><div class="notice">Prochaine vidange Bd dans : <b>${Number.isFinite(oilBd)?oilBd.toFixed(1):"—"} h</b></div><div class="notice">Prochaine vidange Td dans : <b>${Number.isFinite(oilTd)?oilTd.toFixed(1):"—"} h</b></div><div class="notice">Prochain remplacement des filtres dans : <b>${Number.isFinite(filter)?filter.toFixed(1):"—"} h</b></div></div><p class="small">Calculs basés sur les derniers index moteur et les derniers index de visite renseignés.</p></div>`;
+}
+function drawCounterChart(){
+ const box=document.getElementById("counterChart"),sel=document.getElementById("counterChartMetric");if(!box||!sel)return;
+ const site=counterTab==="Site VDP",key=sel.value;
+ const rows=counterRows.filter(r=>r.period_type===(site?"month":"week")&&r.metrics&&r.metrics[key]!==null&&r.metrics[key]!==undefined&&r.metrics[key]!=="").sort((a,b)=>a.period_key.localeCompare(b.period_key));
+ if(rows.length<1){box.innerHTML='<p class="small muted">Aucune donnée disponible pour ce graphique. Enregistrez des relevés pour commencer le suivi.</p>';return}
+ const vals=rows.map(r=>Number(r.metrics[key])).filter(Number.isFinite);if(!vals.length){box.innerHTML='<p class="small muted">Pas de valeur numérique exploitable.</p>';return}
+ const min=Math.min(...vals),max=Math.max(...vals),range=max-min||1,W=760,H=240,p=38;
+ const pts=rows.map((r,i)=>{const v=Number(r.metrics[key]);return `${p+i*(W-2*p)/Math.max(1,rows.length-1)},${H-p-(v-min)*(H-2*p)/range}`}).join(" ");
+ box.innerHTML=`<div style="overflow:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:320px;max-width:850px;background:#fbfdfe;border:1px solid var(--border);border-radius:10px"><line x1="${p}" y1="${p}" x2="${p}" y2="${H-p}" stroke="#9aa8b2"/><line x1="${p}" y1="${H-p}" x2="${W-p}" y2="${H-p}" stroke="#9aa8b2"/><polyline points="${pts}" fill="none" stroke="#0b6b91" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>${rows.map((r,i)=>{const x=p+i*(W-2*p)/Math.max(1,rows.length-1),y=H-p-(Number(r.metrics[key])-min)*(H-2*p)/range;return `<circle cx="${x}" cy="${y}" r="4" fill="#0b6b91"><title>${esc(r.period_key)} : ${Number(r.metrics[key]).toLocaleString("fr-FR")}</title></circle>`}).join("")}<text x="${p}" y="18" font-size="11" fill="#52616b">${max.toLocaleString("fr-FR")}</text><text x="${p}" y="${H-8}" font-size="11" fill="#52616b">${min.toLocaleString("fr-FR")}</text></svg></div><div class="small">Période : ${site?"mois":"semaines"} · ${rows.length} relevé(s) affiché(s).</div>`;
+}
+async function saveCounterReading(){
+ const site=counterTab==="Site VDP",boat=COUNTER_BOATS.find(x=>x.label===counterTab),type=site?"month":"week";
+ const raw=document.getElementById("counterPeriod").value,period_key=site?raw:String(Number(raw)).padStart(2,"0");
+ if(site&&!/^\d{4}-\d{2}$/.test(period_key)||!site&&(!Number(raw)||Number(raw)<1||Number(raw)>53)){alert("Période invalide.");return}
+ const metrics={};
+ if(site)COUNTER_SITE_METRICS.forEach((m,i)=>{const v=document.getElementById("counterMetric-"+i)?.value;if(v!=="")metrics[m]=Number(v)});
+ else boat.metrics.forEach(([k])=>{const v=document.getElementById("counterMetric-"+k)?.value;if(v!=="")metrics[k]=Number(v)});
+ const observations=document.getElementById("counterObservation").value.trim();
+ const r=await client.from("counter_readings").upsert({asset:counterTab,period_type:type,period_key,metrics,observations,updated_by:profile.id},{onConflict:"asset,period_type,period_key"});
+ const msg=document.getElementById("counterSaveMsg");if(r.error){msg.textContent="Enregistrement impossible : "+r.error.message;msg.className="small error";return}
+ msg.textContent="Relevé enregistré.";msg.className="small";await loadCounterPanel();
+}
+
 </script>
 </body>
 </html>
